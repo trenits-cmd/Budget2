@@ -20,14 +20,13 @@ jobs:
 
       - name: Ausführungsrechte für Gradle vergeben
         run: chmod +x gradlew
-        working-directory: ./nom-du-dossier  # Remplacez par le chemin du dossier ou supprimez si à la racine
 
       - name: Debug-APK mit Gradle erstellen
         run: ./gradlew assembleDebug
-        working-directory: ./nom-du-dossier  # Remplacez par le chemin du dossier ou supprimez si à la racine
 
       - name: APK hochladen
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: '**/build/outputs/apk/debug/app-debug.apk'
+          path: app/build/outputs/apk/debug/app-debug.apk
+          
