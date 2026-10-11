@@ -11,13 +11,35 @@ android {
         applicationId = "com.budget2.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
+            val keystorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
+            val keyAliasValue = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
+            val keyPasswordValue = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull
+
+            if (
+                !keystorePath.isNullOrBlank() &&
+                !keystorePassword.isNullOrBlank() &&
+                !keyAliasValue.isNullOrBlank() &&
+                !keyPasswordValue.isNullOrBlank()
+            ) {
+                storeFile = file(keystorePath)
+                storePassword = keystorePassword
+                keyAlias = keyAliasValue
+                keyPassword = keyPasswordValue
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
