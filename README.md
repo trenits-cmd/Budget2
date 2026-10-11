@@ -4,7 +4,15 @@ Eine native Android-App zur Verwaltung monatlicher Fixkosten mit Jetpack Compose
 Im Tab **Fixkosten** werden Zahlungsart, Zweck, Betrag, Bezahlstatus und Datum
 angezeigt. Unter **Settings** lassen sich Zwecke anlegen, bearbeiten und loeschen.
 Unbezahlte Eintraege sind rot, bezahlte gruen markiert; der Status kann einzeln
-oder fuer alle Eintraege zurueckgesetzt werden.
+oder fuer alle Eintraege zurueckgesetzt werden. Beim ersten Start sind die
+bereitgestellten Fixkosten bereits eingetragen; Datumswerte wie `-27` bleiben
+als Tagesangabe erhalten und Betraege von `0,00 EUR` sind erlaubt.
+Das Dashboard berechnet ausserdem Stichtag, verbleibende Tage, bezahlte und
+offene Fixkosten, Tagesbudget fuer heute und morgen sowie Puffer- und
+Soll-Kontostand-Prognosen. Kontostand und Mindestpuffer werden unter
+**Settings** gepflegt. Der Zahltags-Offset ist 0 Tage; der Stichtag liegt im
+Februar am 27. und sonst drei Tage vor Monatsende. Die Prognose verwendet ein
+Tagesziel von 60 EUR.
 
 ## Starten
 

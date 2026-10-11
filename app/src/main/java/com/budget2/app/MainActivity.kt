@@ -5,7 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -64,7 +63,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.text.NumberFormat
 import java.time.LocalDate
-import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -100,6 +98,7 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 private fun FixedCostsApp(context: Context) {
     var fixedCosts by remember { mutableStateOf(loadFixedCosts(context)) }
+    var dashboardSettings by remember { mutableStateOf(loadDashboardSettings(context)) }
     var selectedTab by remember { mutableStateOf(0) }
     var showEditor by remember { mutableStateOf(false) }
     var editingCost by remember { mutableStateOf<FixedCost?>(null) }
@@ -129,7 +128,7 @@ private fun FixedCostsApp(context: Context) {
                     )
                 }
                 TabRow(selectedTabIndex = selectedTab, containerColor = Color.White) {
-                    listOf("Fixkosten", "Settings").forEachIndexed { index, title ->
+                    listOf("Fixkosten", "Dashboard", "Settings").forEachIndexed { index, title ->
                         Tab(
                             selected = selectedTab == index,
                             onClick = { selectedTab = index },
@@ -148,11 +147,21 @@ private fun FixedCostsApp(context: Context) {
                     updateCosts(updateFixedCostStatus(fixedCosts, cost.id, isPaid))
                 },
                 onResetStatuses = { confirmReset = true },
-                onGoToSettings = { selectedTab = 1 },
+                onGoToSettings = { selectedTab = 2 },
             )
-            else -> SettingsTab(
+            1 -> DashboardTab(
                 fixedCosts = fixedCosts,
+                settings = dashboardSettings,
                 modifier = Modifier.padding(padding),
+            )
+            2 -> SettingsTab(
+                fixedCosts = fixedCosts,
+                dashboardSettings = dashboardSettings,
+                modifier = Modifier.padding(padding),
+                onSaveDashboardSettings = { updated ->
+                    dashboardSettings = updated
+                    saveDashboardSettings(context, updated)
+                },
                 onAdd = {
                     editingCost = null
                     showEditor = true
@@ -237,6 +246,246 @@ private fun FixedCostsApp(context: Context) {
 }
 
 @Composable
+private fun DashboardTab(
+    fixedCosts: List<FixedCost>,
+    settings: DashboardSettings,
+    modifier: Modifier = Modifier,
+) {
+    val totals = paymentTypeTotals(fixedCosts)
+    val summary = calculateDashboardSummary(fixedCosts, settings)
+    val total = fixedCosts.sumOf { it.amount }
+    val paid = fixedCosts.filter { it.isPaid }.sumOf { it.amount }
+    val unpaid = fixedCosts.filterNot { it.isPaid }.sumOf { it.amount }
+    val maxPaymentTypeTotal = totals.maxOfOrNull { it.total } ?: 0.0
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Dashboard", fontSize = 20.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                Text("Kostenübersicht deiner monatlichen Fixkosten", fontSize = 13.sp, color = Muted)
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DashboardSummary(
+                    label = "Gesamtkosten",
+                    value = money(total),
+                    modifier = Modifier.weight(1f),
+                    tint = Forest,
+                )
+                DashboardSummary(
+                    label = "Unbezahlt",
+                    value = money(unpaid),
+                    modifier = Modifier.weight(1f),
+                    tint = UnpaidTint,
+                )
+            }
+        }
+        item {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("Planung bis zum Zahltag", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Stichtag ${summary.cutoffDate.format(DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.GERMANY))} · " +
+                                "${summary.daysRemaining.coerceAtLeast(0)} Tage verbleibend",
+                            fontSize = 12.sp,
+                            color = Muted,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        DashboardSummary(
+                            label = "Tagesbudget heute",
+                            value = money(summary.dailyBudgetToday),
+                            modifier = Modifier.weight(1f),
+                            tint = Forest,
+                        )
+                        DashboardSummary(
+                            label = "Tagesbudget morgen",
+                            value = money(summary.dailyBudgetTomorrow),
+                            modifier = Modifier.weight(1f),
+                            tint = Forest,
+                        )
+                    }
+                    DashboardMetric("Bezahlte Fixkosten", money(summary.paidFixedCosts), PaidTint)
+                    DashboardMetric("Restliche Fixkosten", money(summary.remainingFixedCosts), UnpaidTint)
+                }
+            }
+        }
+        item {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("Kontostand & Puffer", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                    DashboardMetric("Kontostand", money(settings.balance))
+                    DashboardMetric("Puffer heute berechnet", money(summary.bufferToday))
+                    DashboardMetric("Puffer morgen berechnet", money(summary.bufferTomorrow))
+                    DashboardMetric("Kontostand minus Puffer", money(summary.balanceMinusBuffer))
+                    DashboardMetric("Soll-Kontostand heute", money(summary.targetBalanceToday))
+                    DashboardMetric("Soll-Kontostand morgen", money(summary.targetBalanceTomorrow))
+                    Text(
+                        "Berechnet mit ${money(DAILY_TARGET)} Tagesziel und Mindestpuffer ${money(settings.minimumBuffer)}.",
+                        fontSize = 11.sp,
+                        color = Muted,
+                    )
+                }
+            }
+        }
+        item {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("Nach Zahlungsart", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                        Text("Gesamtbetrag und Anteil bezahlt/unbezahlt", fontSize = 12.sp, color = Muted)
+                    }
+                    if (totals.isEmpty()) {
+                        Text("Noch keine Fixkosten vorhanden.", fontSize = 13.sp, color = Muted)
+                    } else {
+                        totals.forEach { item ->
+                            PaymentTypeBar(item, maxPaymentTypeTotal)
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        DashboardLegend(color = PaidTint, label = "Bezahlt")
+                        DashboardLegend(color = UnpaidTint, label = "Unbezahlt")
+                    }
+                }
+            }
+        }
+        item {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("Zahlungsstatus", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                        Text("Anteil an den gesamten Fixkosten", fontSize = 12.sp, color = Muted)
+                    }
+                    StatusBar("Bezahlt", paid, total, PaidTint)
+                    StatusBar("Unbezahlt", unpaid, total, UnpaidTint)
+                }
+            }
+        }
+        item {
+            Text(
+                "${fixedCosts.size} Fixkosten · ${fixedCosts.count { it.isPaid }} bezahlt · ${fixedCosts.count { !it.isPaid }} unbezahlt",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                fontSize = 12.sp,
+                color = Muted,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DashboardMetric(label: String, value: String, valueColor: Color = Ink) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, modifier = Modifier.weight(1f), fontSize = 12.sp, color = Muted)
+        Text(value, fontSize = 13.sp, color = valueColor, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun DashboardSummary(label: String, value: String, modifier: Modifier, tint: Color) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(label, fontSize = 12.sp, color = Muted)
+            Text(value, fontSize = 17.sp, color = tint, fontWeight = FontWeight.Bold, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun PaymentTypeBar(total: PaymentTypeTotal, maxTotal: Double) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(total.paymentType, modifier = Modifier.weight(1f), fontSize = 13.sp, color = Ink, fontWeight = FontWeight.Medium)
+            Text(money(total.total), fontSize = 13.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+        }
+        Box(
+            Modifier.fillMaxWidth().height(14.dp).clip(RoundedCornerShape(99.dp)).background(PaidBackground),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            val fraction = if (maxTotal > 0) (total.total / maxTotal).toFloat().coerceIn(0f, 1f) else 0f
+            if (fraction > 0f) {
+                Row(
+                    Modifier.fillMaxWidth(fraction).height(14.dp).clip(RoundedCornerShape(99.dp)),
+                ) {
+                    if (total.paid > 0) {
+                        Box(Modifier.weight(total.paid.toFloat()).fillMaxSize().background(PaidTint))
+                    }
+                    if (total.unpaid > 0) {
+                        Box(Modifier.weight(total.unpaid.toFloat()).fillMaxSize().background(UnpaidTint))
+                    }
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Bezahlt ${money(total.paid)}", fontSize = 10.sp, color = PaidTint)
+            Text("Offen ${money(total.unpaid)}", fontSize = 10.sp, color = UnpaidTint)
+        }
+    }
+}
+
+@Composable
+private fun StatusBar(label: String, amount: Double, total: Double, tint: Color) {
+    val fraction = if (total > 0) (amount / total).toFloat().coerceIn(0f, 1f) else 0f
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, modifier = Modifier.weight(1f), fontSize = 13.sp, color = Ink)
+            Text(money(amount), fontSize = 13.sp, color = tint, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.width(8.dp))
+            Text("${(fraction * 100).toInt()}%", fontSize = 12.sp, color = Muted)
+        }
+        Box(Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(99.dp)).background(Paper)) {
+            if (fraction > 0f) {
+                Box(Modifier.fillMaxWidth(fraction).fillMaxSize().clip(RoundedCornerShape(99.dp)).background(tint))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardLegend(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Box(Modifier.size(9.dp).clip(RoundedCornerShape(99.dp)).background(color))
+        Text(label, fontSize = 11.sp, color = Muted)
+    }
+}
+
+@Composable
 private fun FixedCostsTab(
     fixedCosts: List<FixedCost>,
     modifier: Modifier = Modifier,
@@ -279,7 +528,7 @@ private fun FixedCostsTab(
                 }
             }
         } else {
-            items(fixedCosts.sortedWith(compareBy<FixedCost> { it.dueDay }.thenBy { it.name }), key = { it.id }) { cost ->
+            items(fixedCosts, key = { it.id }) { cost ->
                 FixedCostTableRow(cost, onToggleStatus)
             }
         }
@@ -289,14 +538,14 @@ private fun FixedCostsTab(
 @Composable
 private fun FixedCostTableHeader() {
     Row(
-        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp, vertical = 2.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TableCell("Zahlungsart", 72.dp)
-        TableCell("Zweck", 65.dp)
-        TableCell("Betrag", 65.dp)
-        TableCell("Status", 76.dp)
-        TableCell("Datum", 42.dp)
+        TableCell("Zahlungsart", Modifier.weight(1.2f))
+        TableCell("Zweck", Modifier.weight(1.3f))
+        TableCell("Betrag", Modifier.weight(1.1f))
+        TableCell("Status", Modifier.weight(1.05f))
+        TableCell("Datum", Modifier.weight(0.75f))
     }
 }
 
@@ -308,13 +557,13 @@ private fun FixedCostTableRow(cost: FixedCost, onToggleStatus: (FixedCost, Boole
         colors = CardDefaults.cardColors(containerColor = if (cost.isPaid) PaidBackground else UnpaidBackground),
     ) {
         Row(
-            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TableCell(cost.paymentType, 72.dp, color = Ink)
-            TableCell(cost.name, 65.dp, color = Ink, bold = true)
-            TableCell(money(cost.amount), 65.dp, color = Ink)
-            Column(Modifier.width(76.dp), horizontalAlignment = Alignment.Start) {
+            TableCell(cost.paymentType, Modifier.weight(1.2f), color = Ink)
+            TableCell(cost.name, Modifier.weight(1.3f), color = Ink, bold = true)
+            TableCell(money(cost.amount), Modifier.weight(1.1f), color = Ink)
+            Column(Modifier.weight(1.05f), horizontalAlignment = Alignment.Start) {
                 Text(if (cost.isPaid) "bezahlt" else "unbezahlt", fontSize = 10.sp, color = tint, fontWeight = FontWeight.SemiBold)
                 Switch(
                     checked = cost.isPaid,
@@ -322,16 +571,16 @@ private fun FixedCostTableRow(cost: FixedCost, onToggleStatus: (FixedCost, Boole
                     modifier = Modifier.height(32.dp),
                 )
             }
-            TableCell(formatDueDate(cost.dueDay), 42.dp, color = Ink)
+            TableCell(cost.dueDay.toString(), Modifier.weight(0.75f), color = Ink)
         }
     }
 }
 
 @Composable
-private fun TableCell(text: String, width: androidx.compose.ui.unit.Dp, color: Color = Muted, bold: Boolean = false) {
+private fun TableCell(text: String, modifier: Modifier, color: Color = Muted, bold: Boolean = false) {
     Text(
         text = text,
-        modifier = Modifier.width(width).padding(end = 8.dp),
+        modifier = modifier.padding(horizontal = 3.dp),
         fontSize = 10.sp,
         color = color,
         fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Medium,
@@ -343,7 +592,9 @@ private fun TableCell(text: String, width: androidx.compose.ui.unit.Dp, color: C
 @Composable
 private fun SettingsTab(
     fixedCosts: List<FixedCost>,
+    dashboardSettings: DashboardSettings,
     modifier: Modifier = Modifier,
+    onSaveDashboardSettings: (DashboardSettings) -> Unit,
     onAdd: () -> Unit,
     onEdit: (FixedCost) -> Unit,
     onDelete: (FixedCost) -> Unit,
@@ -354,11 +605,15 @@ private fun SettingsTab(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
+            DashboardSettingsCard(dashboardSettings, onSaveDashboardSettings)
+        }
+        item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("Zwecke verwalten", fontSize = 17.sp, color = Ink, fontWeight = FontWeight.SemiBold)
                     Text("Hier gepflegte Daten erscheinen bei den Fixkosten.", fontSize = 12.sp, color = Muted)
                 }
+
                 Button(
                     onClick = onAdd,
                     shape = RoundedCornerShape(12.dp),
@@ -393,7 +648,7 @@ private fun SettingsTab(
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(cost.name, fontSize = 14.sp, color = Ink, fontWeight = FontWeight.SemiBold)
                             Text(
-                                "${cost.paymentType} · ${money(cost.amount)} · Tag ${cost.dueDay}",
+                                "${cost.paymentType} · ${money(cost.amount)} · Datum ${cost.dueDay}",
                                 fontSize = 12.sp,
                                 color = Muted,
                                 maxLines = 1,
@@ -414,6 +669,49 @@ private fun SettingsTab(
 }
 
 @Composable
+private fun DashboardSettingsCard(
+    settings: DashboardSettings,
+    onSave: (DashboardSettings) -> Unit,
+) {
+    var balance by remember(settings) { mutableStateOf(settings.balance.inputValue()) }
+    var minimumBuffer by remember(settings) { mutableStateOf(settings.minimumBuffer.inputValue()) }
+    val parsedBalance = balance.parseAmount()
+    val parsedBuffer = minimumBuffer.parseAmount()
+    val valid = parsedBalance != null && parsedBuffer != null && parsedBuffer >= 0
+
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("Dashboard-Eingaben", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Diese Werte werden für Tagesbudget und Pufferberechnung verwendet.",
+                fontSize = 12.sp,
+                color = Muted,
+            )
+            AmountField("Aktueller Kontostand in Euro", balance) { balance = it }
+            AmountField("Mindestpuffer (Tabellenblatt B25)", minimumBuffer) { minimumBuffer = it }
+            Text("Zahltags-Offset: 0 Tage · Tagesziel: ${money(DAILY_TARGET)}", fontSize = 11.sp, color = Muted)
+            Button(
+                onClick = {
+                    if (valid) {
+                        onSave(DashboardSettings(requireNotNull(parsedBalance), requireNotNull(parsedBuffer)))
+                    }
+                },
+                enabled = valid,
+                colors = ButtonDefaults.buttonColors(containerColor = Forest),
+            ) {
+                Text("Dashboard-Werte speichern")
+            }
+        }
+    }
+}
+
+@Composable
 private fun FixedCostEditorDialog(
     initial: FixedCost?,
     onDismiss: () -> Unit,
@@ -425,7 +723,7 @@ private fun FixedCostEditorDialog(
     var dueDay by remember { mutableStateOf(initial?.dueDay?.takeIf { it != 0 }?.toString() ?: "1") }
     val parsedAmount = amount.parseAmount()
     val parsedDueDay = dueDay.toIntOrNull()
-    val valid = name.isNotBlank() && parsedAmount != null && parsedAmount > 0 &&
+    val valid = name.isNotBlank() && parsedAmount != null && parsedAmount >= 0 &&
         parsedDueDay != null && parsedDueDay in -31..31 && parsedDueDay != 0
 
     AlertDialog(
@@ -515,7 +813,7 @@ private fun DropdownField(label: String, selected: String, options: List<String>
 
 private fun loadFixedCosts(context: Context): List<FixedCost> {
     val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("fixedCosts", null)
-        ?: return emptyList()
+        ?: return DefaultFixedCosts
     val json = JSONArray(stored)
     return List(json.length()) { index ->
         val item = json.getJSONObject(index)
@@ -528,6 +826,28 @@ private fun loadFixedCosts(context: Context): List<FixedCost> {
             dueDay = item.getInt("dueDay"),
         )
     }
+}
+
+private fun loadDashboardSettings(context: Context): DashboardSettings {
+    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE)
+        .getString("dashboardSettings", null)
+        ?: return DashboardSettings()
+    val json = JSONObject(stored)
+    return DashboardSettings(
+        balance = json.getDouble("balance"),
+        minimumBuffer = json.getDouble("minimumBuffer"),
+    )
+}
+
+private fun saveDashboardSettings(context: Context, settings: DashboardSettings) {
+    val json = JSONObject().apply {
+        put("balance", settings.balance)
+        put("minimumBuffer", settings.minimumBuffer)
+    }
+    context.getSharedPreferences("budget", Context.MODE_PRIVATE)
+        .edit()
+        .putString("dashboardSettings", json.toString())
+        .apply()
 }
 
 private fun saveFixedCosts(context: Context, fixedCosts: List<FixedCost>) {
@@ -555,13 +875,3 @@ private fun money(value: Double): String = NumberFormat.getCurrencyInstance(Loca
 private fun String.parseAmount(): Double? = replace(',', '.').toDoubleOrNull()?.takeIf { it.isFinite() }
 
 private fun Double.inputValue(): String = toString()
-
-private fun formatDueDate(dueDay: Int): String {
-    val month = YearMonth.now()
-    val day = when {
-        dueDay < 0 -> (month.lengthOfMonth() + dueDay).coerceIn(1, month.lengthOfMonth())
-        else -> dueDay.coerceIn(1, month.lengthOfMonth())
-    }
-    return LocalDate.of(month.year, month.month, day)
-        .format(DateTimeFormatter.ofPattern("dd.MM.", Locale.GERMANY))
-}
