@@ -1,24 +1,22 @@
 # Budget2
 
-Eine native Budget-App fuer Android mit Jetpack Compose.
+Eine native Android-App zur Verwaltung monatlicher Fixkosten mit Jetpack Compose.
+Im Tab **Fixkosten** werden Zahlungsart, Zweck, Betrag, Bezahlstatus und Datum
+angezeigt. Unter **Settings** lassen sich Zwecke anlegen, bearbeiten und loeschen.
+Unbezahlte Eintraege sind rot, bezahlte gruen markiert; der Status kann einzeln
+oder fuer alle Eintraege zurueckgesetzt werden.
 
 ## Starten
 
 Das Projekt in Android Studio oeffnen und die Gradle-Synchronisierung abwarten. Zum Bauen benoetigt es Android SDK 34. Die App laeuft ab Android 6.0 (API 23); anschliessend kannst du sie auf einem passenden Emulator oder Android-Geraet starten.
 
-Die Buchungen werden lokal auf dem Geraet gespeichert.
+Die Fixkosten und Bezahlstatus werden lokal auf dem Geraet gespeichert.
 
 ## APK herunterladen
 
 GitHub Actions erstellt nach jedem Push auf `main` eine Release-APK. Oeffne den Workflow **Build Android APK** unter **Actions**, waehle den neuesten erfolgreichen Lauf und lade unter **Artifacts** das Artefakt `app-release` herunter. Entpacke die ZIP-Datei und installiere `app-release.apk`. Du kannst den Build auch manuell mit **Run workflow** starten.
 
 Ohne konfigurierte Signatur-Secrets signiert der Workflow die APK mit dem temporaeren Debug-Schluessel des Runners. Diese APK ist installierbar, aber nicht dauerhaft aktualisierbar: Ein spaeterer Workflow-Lauf kann einen anderen Schluessel verwenden. Android verweigert dann das Update; die App muss deinstalliert werden, wobei lokal gespeicherte Buchungen verloren gehen koennen. Ein lokaler `./gradlew assembleRelease`-Build ohne Release-Keystore wird ebenfalls mit dem lokalen Debug-Schluessel signiert. Fuer dauerhaft aktualisierbare APKs richte die unten beschriebenen Signatur-Secrets ein.
-
-### Daten vor einer Neuinstallation sichern
-
-Die App bietet unter **Budget & Ziele** die Aktionen **Sicherung erstellen** und **Sicherung wiederherstellen**. Erstelle eine JSON-Sicherung und speichere sie ausserhalb der App, zum Beispiel in Downloads oder auf einem Cloud-Laufwerk. Nach einer Neuinstallation kannst du sie ueber **Sicherung wiederherstellen** einlesen. Die Sicherung umfasst Buchungen, Fixkosten, unregelmaessige Ausgaben, Budgeteinstellungen und den ausgewaehlten Monat.
-
-**Einschraenkung beim erstmaligen Wechsel:** Die Exportfunktion ist erst in APKs ab dieser Version enthalten. Wenn die aktuell installierte aeltere APK wegen einer anderen Signatur nicht aktualisiert werden kann, kann sie diese Sicherung noch nicht erstellen. Einmalig ist daher vor der Neuinstallation keine Sicherung aus der App moeglich; lokale Daten koennen verloren gehen. Die Export-/Importfunktion schuetzt anschliessende Neuinstallationen, sofern du vorher eine Sicherung erstellt hast.
 
 ### Signaturschluessel einmalig einrichten
 
@@ -38,4 +36,4 @@ Fuege in GitHub unter **Settings > Secrets and variables > Actions > New reposit
 
 Der private Schluessel gehoert nicht ins Repository. Sind keine dieser Secrets gesetzt, baut der Workflow mit dem temporaeren Debug-Schluessel weiter. Sind nur einige Secrets gesetzt, bricht er mit einer klaren Fehlermeldung ab. Die lokal in Android Studio erstellten Debug-APKs haben eine andere Signatur und eignen sich nicht als Updates der mit diesem Release-Schluessel signierten APK.
 
-**Wichtig beim Wechsel:** Wenn Android eine installierte Version wegen einer abweichenden Signatur nicht aktualisieren kann, muss die alte App vor der Installation deinstalliert werden; dabei koennen lokal gespeicherte Buchungen verloren gehen. Mit dauerhaft eingerichteten Signatur-Secrets funktionieren Updates mit den ueber GitHub Actions erstellten Release-APKs.
+**Wichtig beim Wechsel:** Wenn Android eine installierte Version wegen einer abweichenden Signatur nicht aktualisieren kann, muss die alte App vor der Installation deinstalliert werden; dabei koennen lokal gespeicherte Fixkosten verloren gehen. Mit dauerhaft eingerichteten Signatur-Secrets funktionieren Updates mit den ueber GitHub Actions erstellten Release-APKs.

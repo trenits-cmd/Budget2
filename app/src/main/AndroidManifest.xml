@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
         android:allowBackup="true"
-        android:label="Budget"
+        android:label="Fixkosten"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name="com.budget2.app.MainActivity"
