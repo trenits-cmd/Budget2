@@ -10,9 +10,9 @@ Die Buchungen werden lokal auf dem Geraet gespeichert.
 
 ## APK herunterladen
 
-GitHub Actions erstellt nach jedem Push auf `main` eine signierte Release-APK. Oeffne den Workflow **Build Android APK** unter **Actions**, waehle den neuesten erfolgreichen Lauf und lade unter **Artifacts** das Artefakt `app-release` herunter. Entpacke die ZIP-Datei und installiere `app-release.apk`. Du kannst den Build auch manuell mit **Run workflow** starten.
+GitHub Actions erstellt nach jedem Push auf `main` eine Release-APK. Oeffne den Workflow **Build Android APK** unter **Actions**, waehle den neuesten erfolgreichen Lauf und lade unter **Artifacts** das Artefakt `app-release` herunter. Entpacke die ZIP-Datei und installiere `app-release.apk`. Du kannst den Build auch manuell mit **Run workflow** starten.
 
-Ein lokaler `./gradlew assembleRelease`-Build ohne Release-Keystore wird mit dem lokalen Debug-Schluessel signiert und ist installierbar. Er kann keine APK aktualisieren, die mit einem anderen Schluessel signiert wurde, und ist nicht fuer die Verteilung gedacht. Fuer installierbare und dauerhaft aktualisierbare GitHub-Release-APKs muessen die unten beschriebenen Signatur-Secrets eingerichtet sein.
+Ohne konfigurierte Signatur-Secrets signiert der Workflow die APK mit dem temporaeren Debug-Schluessel des Runners. Diese APK ist installierbar, aber nicht dauerhaft aktualisierbar: Ein spaeterer Workflow-Lauf kann einen anderen Schluessel verwenden. Android verweigert dann das Update; die App muss deinstalliert werden, wobei lokal gespeicherte Buchungen verloren gehen koennen. Ein lokaler `./gradlew assembleRelease`-Build ohne Release-Keystore wird ebenfalls mit dem lokalen Debug-Schluessel signiert. Fuer dauerhaft aktualisierbare APKs richte die unten beschriebenen Signatur-Secrets ein.
 
 ### Signaturschluessel einmalig einrichten
 
@@ -30,6 +30,6 @@ Fuege in GitHub unter **Settings > Secrets and variables > Actions > New reposit
 - `ANDROID_KEY_ALIAS`: `budget2` (oder der beim Erstellen gewaehlte Alias)
 - `ANDROID_KEY_PASSWORD`: das beim Erstellen gesetzte Schluessel-Passwort
 
-Der private Schluessel gehoert nicht ins Repository. Ohne die Secrets bricht der APK-Workflow mit einer klaren Fehlermeldung ab. Die lokal in Android Studio erstellten Debug-APKs haben eine andere Signatur und eignen sich nicht als Updates dieser Release-APK.
+Der private Schluessel gehoert nicht ins Repository. Sind keine dieser Secrets gesetzt, baut der Workflow mit dem temporaeren Debug-Schluessel weiter. Sind nur einige Secrets gesetzt, bricht er mit einer klaren Fehlermeldung ab. Die lokal in Android Studio erstellten Debug-APKs haben eine andere Signatur und eignen sich nicht als Updates der mit diesem Release-Schluessel signierten APK.
 
-**Wichtig beim Wechsel:** Die bisherige Debug-APK wurde mit einem nicht dauerhaft gespeicherten Schluessel signiert. Um erstmals die Release-APK zu installieren, muss die alte App einmalig deinstalliert werden; dabei koennen lokal gespeicherte Buchungen verloren gehen. Danach funktionieren Updates mit den ueber GitHub Actions erstellten Release-APKs.
+**Wichtig beim Wechsel:** Wenn Android eine installierte Version wegen einer abweichenden Signatur nicht aktualisieren kann, muss die alte App vor der Installation deinstalliert werden; dabei koennen lokal gespeicherte Buchungen verloren gehen. Mit dauerhaft eingerichteten Signatur-Secrets funktionieren Updates mit den ueber GitHub Actions erstellten Release-APKs.

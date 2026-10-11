@@ -21,22 +21,40 @@ jobs:
       - name: Ausführungsrechte für Gradle vergeben
         run: chmod +x gradlew
 
-      - name: Signaturschluessel pruefen
+      - name: Release-Schluessel optional einrichten
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          test -n "$ANDROID_KEYSTORE_BASE64" || { echo "::error::ANDROID_KEYSTORE_BASE64 ist nicht eingerichtet"; exit 1; }
-          test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo "::error::ANDROID_KEYSTORE_PASSWORD ist nicht eingerichtet"; exit 1; }
-          test -n "$ANDROID_KEY_ALIAS" || { echo "::error::ANDROID_KEY_ALIAS ist nicht eingerichtet"; exit 1; }
-          test -n "$ANDROID_KEY_PASSWORD" || { echo "::error::ANDROID_KEY_PASSWORD ist nicht eingerichtet"; exit 1; }
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/budget2-release.jks"
+          configured_count=0
+          for value in \
+            "$ANDROID_KEYSTORE_BASE64" \
+            "$ANDROID_KEYSTORE_PASSWORD" \
+            "$ANDROID_KEY_ALIAS" \
+            "$ANDROID_KEY_PASSWORD"; do
+            if [ -n "$value" ]; then
+              configured_count=$((configured_count + 1))
+            fi
+          done
 
-      - name: Release-APK mit dauerhaftem Schluessel erstellen
+          if [ "$configured_count" -eq 0 ]; then
+            echo "::warning::Kein Release-Schluessel konfiguriert; die APK wird mit dem temporaeren Debug-Schluessel dieses Runners signiert."
+            exit 0
+          fi
+
+          if [ "$configured_count" -ne 4 ]; then
+            echo "::error::Release-Signierung erfordert alle vier ANDROID_KEYSTORE_*- und ANDROID_KEY_*-Secrets."
+            exit 1
+          fi
+
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/budget2-release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/budget2-release.jks" >> "$GITHUB_ENV"
+
+      - name: Release-APK erstellen
         env:
-          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/budget2-release.jks
+          ANDROID_KEYSTORE_PATH: ${{ env.ANDROID_KEYSTORE_PATH }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
