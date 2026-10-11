@@ -3,7 +3,9 @@ package com.budget2.app
 import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -98,6 +100,14 @@ private data class Entry(
     val date: String,
 )
 
+private data class BudgetBackup(
+    val entries: List<Entry>,
+    val fixedCosts: List<FixedCost>,
+    val irregularExpenses: List<IrregularExpense>,
+    val settings: BudgetSettings,
+    val monthOffset: Int,
+)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -130,6 +140,36 @@ private fun BudgetScreen(context: Context) {
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showFixedCostDialog by remember { mutableStateOf(false) }
     var showIrregularDialog by remember { mutableStateOf(false) }
+    var backupMessage by remember { mutableStateOf<String?>(null) }
+    var pendingBackup by remember { mutableStateOf<BudgetBackup?>(null) }
+    val exportBackup = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val backup = BudgetBackup(entries, fixedCosts, irregularExpenses, settings, monthOffset)
+                context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
+                    it.write(backup.toJson().toString(2))
+                } ?: error("Die Sicherungsdatei konnte nicht geöffnet werden.")
+                backupMessage = "Sicherung wurde erstellt. Bewahre die Datei an einem sicheren Ort auf."
+            } catch (error: Exception) {
+                backupMessage = "Sicherung konnte nicht erstellt werden: ${error.localizedMessage ?: "Unbekannter Fehler"}"
+            }
+        }
+    }
+    val importBackup = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val contents = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: error("Die Sicherungsdatei konnte nicht geöffnet werden.")
+                pendingBackup = parseBudgetBackup(JSONObject(contents))
+            } catch (error: Exception) {
+                backupMessage = "Sicherung konnte nicht gelesen werden: ${error.localizedMessage ?: "Unbekannter Fehler"}"
+            }
+        }
+    }
     val spent = entries.filterNot { it.isIncome }.sumOf { it.amount }
     val income = entries.filter { it.isIncome }.sumOf { it.amount }
     val budget = calculateBudget(settings, fixedCosts, monthOffset = monthOffset)
@@ -259,6 +299,14 @@ private fun BudgetScreen(context: Context) {
                             Spacer(Modifier.width(6.dp))
                             Text("Kontostand, Puffer und Gehalt einstellen")
                         }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { exportBackup.launch("budget2-sicherung.json") }) {
+                                Text("Sicherung erstellen")
+                            }
+                            TextButton(onClick = { importBackup.launch(arrayOf("application/json", "text/*")) }) {
+                                Text("Sicherung wiederherstellen")
+                            }
+                        }
                     }
                 }
             }
@@ -369,6 +417,43 @@ private fun BudgetScreen(context: Context) {
                 saveEntries(context, updated)
                 showDialog = false
             },
+        )
+    }
+    pendingBackup?.let { backup ->
+        AlertDialog(
+            onDismissRequest = { pendingBackup = null },
+            title = { Text("Sicherung wiederherstellen?") },
+            text = { Text("Deine aktuellen Buchungen, Fixkosten, Ausgaben und Einstellungen werden durch die Sicherung ersetzt.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        try {
+                            saveBackup(context, backup)
+                            entries = backup.entries
+                            fixedCosts = backup.fixedCosts
+                            irregularExpenses = backup.irregularExpenses
+                            settings = backup.settings
+                            monthOffset = backup.monthOffset
+                            pendingBackup = null
+                            backupMessage = "Sicherung wurde wiederhergestellt."
+                        } catch (error: Exception) {
+                            pendingBackup = null
+                            backupMessage = "Sicherung konnte nicht wiederhergestellt werden: ${error.localizedMessage ?: "Unbekannter Fehler"}"
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Forest),
+                ) { Text("Wiederherstellen") }
+            },
+            dismissButton = { TextButton(onClick = { pendingBackup = null }) { Text("Abbrechen", color = Muted) } },
+            containerColor = Color.White,
+        )
+    }
+    backupMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = { backupMessage = null },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { backupMessage = null }) { Text("OK") } },
+            containerColor = Color.White,
         )
     }
 }
@@ -968,6 +1053,116 @@ private fun saveIrregularExpenses(context: Context, expenses: List<IrregularExpe
     }
     context.getSharedPreferences("budget", Context.MODE_PRIVATE)
         .edit().putString("irregularExpenses", json.toString()).apply()
+}
+
+private fun BudgetBackup.toJson(): JSONObject = JSONObject().apply {
+    put("formatVersion", 1)
+    put("entries", JSONArray().apply {
+        entries.forEach { entry ->
+            put(JSONObject().apply {
+                put("id", entry.id)
+                put("title", entry.title)
+                put("category", entry.category)
+                put("amount", entry.amount)
+                put("income", entry.isIncome)
+                put("date", entry.date)
+            })
+        }
+    })
+    put("fixedCosts", JSONArray().apply {
+        fixedCosts.forEach { cost ->
+            put(JSONObject().apply {
+                put("id", cost.id)
+                put("paymentType", cost.paymentType)
+                put("name", cost.name)
+                put("amount", cost.amount)
+                put("isPaid", cost.isPaid)
+                put("dueDay", cost.dueDay)
+            })
+        }
+    })
+    put("irregularExpenses", JSONArray().apply {
+        irregularExpenses.forEach { expense ->
+            put(JSONObject().apply {
+                put("id", expense.id)
+                put("name", expense.name)
+                put("amount", expense.amount)
+                put("account", expense.account)
+                put("dueDate", expense.dueDate)
+                put("count", expense.count)
+            })
+        }
+    })
+    put("settings", JSONObject().apply {
+        put("balance", settings.balance)
+        put("safetyBuffer", settings.safetyBuffer)
+        put("netSalary", settings.netSalary)
+        put("paydayDay", settings.paydayDay)
+        put("fixedDailyAmount", settings.fixedDailyAmount)
+    })
+    put("monthOffset", monthOffset)
+}
+
+private fun saveBackup(context: Context, backup: BudgetBackup) {
+    val json = backup.toJson()
+    val saved = context.getSharedPreferences("budget", Context.MODE_PRIVATE).edit()
+        .putString("entries", json.getJSONArray("entries").toString())
+        .putString("fixedCosts", json.getJSONArray("fixedCosts").toString())
+        .putString("irregularExpenses", json.getJSONArray("irregularExpenses").toString())
+        .putString("settings", json.getJSONObject("settings").toString())
+        .putInt("monthOffset", backup.monthOffset)
+        .commit()
+    check(saved) { "Die Daten konnten nicht dauerhaft gespeichert werden." }
+}
+
+private fun parseBudgetBackup(json: JSONObject): BudgetBackup {
+    require(json.getInt("formatVersion") == 1) { "Unbekanntes Sicherungsformat." }
+    val entriesJson = json.getJSONArray("entries")
+    val entries = List(entriesJson.length()) { index ->
+        val item = entriesJson.getJSONObject(index)
+        Entry(
+            id = item.getLong("id"),
+            title = item.getString("title").also { require(it.isNotBlank()) },
+            category = item.getString("category").also { require(it in Categories) },
+            amount = item.getDouble("amount").also { require(it.isFinite() && it > 0) },
+            isIncome = item.getBoolean("income"),
+            date = item.getString("date"),
+        )
+    }
+    val fixedCostsJson = json.getJSONArray("fixedCosts")
+    val fixedCosts = List(fixedCostsJson.length()) { index ->
+        val item = fixedCostsJson.getJSONObject(index)
+        FixedCost(
+            id = item.getLong("id"),
+            paymentType = item.getString("paymentType").also { require(it in PaymentTypes) },
+            name = item.getString("name").also { require(it.isNotBlank()) },
+            amount = item.getDouble("amount").also { require(it.isFinite() && it > 0) },
+            isPaid = item.getBoolean("isPaid"),
+            dueDay = item.getInt("dueDay").also { require(it in -31..31) },
+        )
+    }
+    val irregularExpensesJson = json.getJSONArray("irregularExpenses")
+    val irregularExpenses = List(irregularExpensesJson.length()) { index ->
+        val item = irregularExpensesJson.getJSONObject(index)
+        IrregularExpense(
+            id = item.getLong("id"),
+            name = item.getString("name").also { require(it.isNotBlank()) },
+            amount = item.getDouble("amount").also { require(it.isFinite() && it > 0) },
+            account = item.getString("account").also { require(it in ExpenseAccounts) },
+            dueDate = item.getString("dueDate").also { LocalDate.parse(it) },
+            count = item.getInt("count").also { require(it > 0) },
+        )
+    }
+    val settingsJson = json.getJSONObject("settings")
+    val settings = BudgetSettings(
+        balance = settingsJson.getDouble("balance").also { require(it.isFinite() && it >= 0) },
+        safetyBuffer = settingsJson.getDouble("safetyBuffer").also { require(it.isFinite() && it >= 0) },
+        netSalary = settingsJson.getDouble("netSalary").also { require(it.isFinite() && it >= 0) },
+        paydayDay = settingsJson.getInt("paydayDay").also { require(it in 1..31) },
+        fixedDailyAmount = settingsJson.getDouble("fixedDailyAmount").also { require(it.isFinite() && it >= 0) },
+    )
+    val monthOffset = json.getInt("monthOffset").also { require(it in 0..1) }
+    return BudgetBackup(entries, fixedCosts, irregularExpenses, settings, monthOffset)
 }
 
 private fun String.parseAmount(): Double? = replace(',', '.').toDoubleOrNull()?.takeIf { it.isFinite() }

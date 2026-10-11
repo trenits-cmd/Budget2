@@ -14,6 +14,12 @@ GitHub Actions erstellt nach jedem Push auf `main` eine Release-APK. Oeffne den 
 
 Ohne konfigurierte Signatur-Secrets signiert der Workflow die APK mit dem temporaeren Debug-Schluessel des Runners. Diese APK ist installierbar, aber nicht dauerhaft aktualisierbar: Ein spaeterer Workflow-Lauf kann einen anderen Schluessel verwenden. Android verweigert dann das Update; die App muss deinstalliert werden, wobei lokal gespeicherte Buchungen verloren gehen koennen. Ein lokaler `./gradlew assembleRelease`-Build ohne Release-Keystore wird ebenfalls mit dem lokalen Debug-Schluessel signiert. Fuer dauerhaft aktualisierbare APKs richte die unten beschriebenen Signatur-Secrets ein.
 
+### Daten vor einer Neuinstallation sichern
+
+Die App bietet unter **Budget & Ziele** die Aktionen **Sicherung erstellen** und **Sicherung wiederherstellen**. Erstelle eine JSON-Sicherung und speichere sie ausserhalb der App, zum Beispiel in Downloads oder auf einem Cloud-Laufwerk. Nach einer Neuinstallation kannst du sie ueber **Sicherung wiederherstellen** einlesen. Die Sicherung umfasst Buchungen, Fixkosten, unregelmaessige Ausgaben, Budgeteinstellungen und den ausgewaehlten Monat.
+
+**Einschraenkung beim erstmaligen Wechsel:** Die Exportfunktion ist erst in APKs ab dieser Version enthalten. Wenn die aktuell installierte aeltere APK wegen einer anderen Signatur nicht aktualisiert werden kann, kann sie diese Sicherung noch nicht erstellen. Einmalig ist daher vor der Neuinstallation keine Sicherung aus der App moeglich; lokale Daten koennen verloren gehen. Die Export-/Importfunktion schuetzt anschliessende Neuinstallationen, sofern du vorher eine Sicherung erstellt hast.
+
 ### Signaturschluessel einmalig einrichten
 
 Android erlaubt Updates nur, wenn jede APK mit demselben Schluessel signiert ist. Erstelle einmalig einen privaten Schluessel auf einem sicheren Rechner und bewahre die Keystore-Datei dauerhaft und sicher auf:
