@@ -22,13 +22,21 @@ android {
             val keyAliasValue = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
             val keyPasswordValue = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull
 
-            if (
-                !keystorePath.isNullOrBlank() &&
-                !keystorePassword.isNullOrBlank() &&
-                !keyAliasValue.isNullOrBlank() &&
-                !keyPasswordValue.isNullOrBlank()
-            ) {
-                storeFile = file(keystorePath)
+            val signingValues = listOf(
+                keystorePath,
+                keystorePassword,
+                keyAliasValue,
+                keyPasswordValue,
+            )
+            val configuredValueCount = signingValues.count { !it.isNullOrBlank() }
+
+            check(configuredValueCount == 0 || configuredValueCount == signingValues.size) {
+                "Release signing requires ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, " +
+                    "ANDROID_KEY_ALIAS, and ANDROID_KEY_PASSWORD."
+            }
+
+            if (configuredValueCount == signingValues.size) {
+                storeFile = file(requireNotNull(keystorePath))
                 storePassword = keystorePassword
                 keyAlias = keyAliasValue
                 keyPassword = keyPasswordValue
@@ -39,7 +47,15 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (signingConfigs.getByName("release").storeFile != null) {
+                signingConfigs.getByName("release")
+            } else {
+                logger.warn(
+                    "No release keystore configured; signing this local release APK with " +
+                        "the debug key. It cannot update APKs signed with another key."
+                )
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

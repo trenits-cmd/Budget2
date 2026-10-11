@@ -12,6 +12,8 @@ Die Buchungen werden lokal auf dem Geraet gespeichert.
 
 GitHub Actions erstellt nach jedem Push auf `main` eine signierte Release-APK. Oeffne den Workflow **Build Android APK** unter **Actions**, waehle den neuesten erfolgreichen Lauf und lade unter **Artifacts** das Artefakt `app-release` herunter. Entpacke die ZIP-Datei und installiere `app-release.apk`. Du kannst den Build auch manuell mit **Run workflow** starten.
 
+Ein lokaler `./gradlew assembleRelease`-Build ohne Release-Keystore wird mit dem lokalen Debug-Schluessel signiert und ist installierbar. Er kann keine APK aktualisieren, die mit einem anderen Schluessel signiert wurde, und ist nicht fuer die Verteilung gedacht. Fuer installierbare und dauerhaft aktualisierbare GitHub-Release-APKs muessen die unten beschriebenen Signatur-Secrets eingerichtet sein.
+
 ### Signaturschluessel einmalig einrichten
 
 Android erlaubt Updates nur, wenn jede APK mit demselben Schluessel signiert ist. Erstelle einmalig einen privaten Schluessel auf einem sicheren Rechner und bewahre die Keystore-Datei dauerhaft und sicher auf:
