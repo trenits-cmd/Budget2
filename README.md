@@ -4,7 +4,7 @@ Eine native Budget-App fuer Android mit Jetpack Compose.
 
 ## Starten
 
-Das Projekt in Android Studio oeffnen und die Gradle-Synchronisierung abwarten. Es benoetigt Android SDK 34. Anschliessend die App auf einem Emulator oder Android-Geraet starten.
+Das Projekt in Android Studio oeffnen und die Gradle-Synchronisierung abwarten. Zum Bauen benoetigt es Android SDK 34. Die App laeuft ab Android 6.0 (API 23); anschliessend kannst du sie auf einem passenden Emulator oder Android-Geraet starten.
 
 Die Buchungen werden lokal auf dem Geraet gespeichert.
 
