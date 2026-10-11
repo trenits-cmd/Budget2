@@ -28,11 +28,16 @@ import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -74,7 +79,6 @@ private val Ink = Color(0xFF1C2924)
 private val Muted = Color(0xFF78817B)
 private val Line = Color(0xFFE8E7E0)
 private val Categories = listOf("Lebensmittel", "Wohnen", "Mobilität", "Freizeit", "Sonstiges")
-private const val MonthlyBudget = 2400.0
 
 private data class Entry(
     val id: Long,
@@ -109,11 +113,24 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun BudgetScreen(context: Context) {
     var entries by remember { mutableStateOf(loadEntries(context)) }
+    var fixedCosts by remember { mutableStateOf(loadFixedCosts(context)) }
+    var irregularExpenses by remember { mutableStateOf(loadIrregularExpenses(context)) }
+    var settings by remember { mutableStateOf(loadBudgetSettings(context)) }
+    var monthOffset by remember { mutableStateOf(loadMonthOffset(context)) }
     var showDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    var showFixedCostDialog by remember { mutableStateOf(false) }
+    var showIrregularDialog by remember { mutableStateOf(false) }
     val spent = entries.filterNot { it.isIncome }.sumOf { it.amount }
     val income = entries.filter { it.isIncome }.sumOf { it.amount }
-    val remaining = MonthlyBudget - spent
-    val month = LocalDate.now().format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.GERMANY))
+    val budget = calculateBudget(settings, fixedCosts, monthOffset = monthOffset)
+    val expensesProgress = if (budget.totalFixedCosts > 0) {
+        (budget.paidFixedCosts / budget.totalFixedCosts).toFloat().coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    val month = LocalDate.now().plusMonths(monthOffset.toLong())
+        .format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.GERMANY))
 
     Scaffold(
         containerColor = Paper,
@@ -153,7 +170,10 @@ private fun BudgetScreen(context: Context) {
                     Spacer(Modifier.weight(1f))
                     Text("●", color = Color(0xFF56A477), fontSize = 13.sp)
                     Spacer(Modifier.width(6.dp))
-                    Text("Aktuell", fontSize = 12.sp, color = Muted)
+                    MonthSelector(monthOffset) { selected ->
+                        monthOffset = selected
+                        saveMonthOffset(context, selected)
+                    }
                 }
             }
             item {
@@ -167,18 +187,87 @@ private fun BudgetScreen(context: Context) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("NOCH VERFÜGBAR", fontSize = 11.sp, color = Color(0xFFB9C9BF), fontWeight = FontWeight.SemiBold)
-                            Text(money(remaining), fontSize = 30.sp, color = Color.White, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Medium)
-                            Text("von ${money(MonthlyBudget)} Monatsbudget", fontSize = 12.sp, color = Color(0xFFB9C9BF))
+                            Text("DEIN TAGESBUDGET", fontSize = 11.sp, color = Color(0xFFB9C9BF), fontWeight = FontWeight.SemiBold)
+                            Text(money(budget.dailyBudget), fontSize = 30.sp, color = Color.White, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Medium)
+                            Text("für ${budget.daysUntilPayday} Tage bis zum Gehalt", fontSize = 12.sp, color = Color(0xFFB9C9BF))
                         }
-                        BudgetRing(progress = (spent / MonthlyBudget).toFloat().coerceIn(0f, 1f))
+                        BudgetRing(progress = expensesProgress)
                     }
                 }
             }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SummaryTile("Ausgaben", spent, Icons.Outlined.ArrowUpward, Color(0xFFB85C45), Modifier.weight(1f))
-                    SummaryTile("Einnahmen", income, Icons.Outlined.ArrowDownward, Color(0xFF43856A), Modifier.weight(1f))
+                    SummaryTile("Offene Fixkosten", budget.unpaidFixedCosts, Icons.Outlined.Schedule, Color(0xFFB85C45), Modifier.weight(1f))
+                    SummaryTile("Konto − Puffer", budget.balanceAfterBuffer, Icons.Outlined.AccountBalanceWallet, Color(0xFF43856A), Modifier.weight(1f))
+                }
+            }
+            item {
+                Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        SectionTitle("Monatsübersicht", money(budget.totalFixedCosts))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Sparen nach Fixkosten", fontSize = 13.sp, color = Muted)
+                            Text(money(budget.monthlySavings), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Bereits bezahlte Fixkosten", fontSize = 13.sp, color = Muted)
+                            Text(money(budget.paidFixedCosts), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Soll-Kontostand heute", fontSize = 13.sp, color = Muted)
+                            Text(money(budget.targetBalance), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+                        }
+                        TextButton(onClick = { showSettingsDialog = true }) {
+                            Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Kontostand, Puffer und Gehalt einstellen")
+                        }
+                    }
+                }
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SectionTitle("Fixkosten", "${fixedCosts.size} gesamt", Modifier.weight(1f))
+                        TextButton(onClick = { showFixedCostDialog = true }) {
+                            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Text("Hinzufügen", fontSize = 12.sp)
+                        }
+                    }
+                    if (fixedCosts.isEmpty()) {
+                        Text("Noch keine Fixkosten eingetragen.", fontSize = 13.sp, color = Muted)
+                    } else {
+                        fixedCosts.sortedWith(compareBy<FixedCost> { it.isPaid }.thenBy { it.dueDay }).forEach { cost ->
+                            FixedCostRow(cost) {
+                                val updated = fixedCosts.map {
+                                    if (it.id == cost.id) it.copy(isPaid = !it.isPaid) else it
+                                }
+                                fixedCosts = updated
+                                saveFixedCosts(context, updated)
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SectionTitle("Unregelmäßige Ausgaben", "${irregularExpenses.size} gesamt", Modifier.weight(1f))
+                        TextButton(onClick = { showIrregularDialog = true }) {
+                            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Text("Hinzufügen", fontSize = 12.sp)
+                        }
+                    }
+                    if (irregularExpenses.isEmpty()) {
+                        Text("Noch keine unregelmäßigen Ausgaben eingetragen.", fontSize = 13.sp, color = Muted)
+                    } else {
+                        irregularExpenses.sortedBy { it.dueDate }.forEach { expense ->
+                            IrregularExpenseRow(expense)
+                        }
+                    }
                 }
             }
             item {
@@ -194,9 +283,48 @@ private fun BudgetScreen(context: Context) {
             items(entries.sortedByDescending { it.id }.take(8), key = { it.id }) { entry ->
                 EntryRow(entry)
             }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SummaryTile("Gebuchte Ausgaben", spent, Icons.Outlined.ArrowUpward, Color(0xFFB85C45), Modifier.weight(1f))
+                    SummaryTile("Gebuchte Einnahmen", income, Icons.Outlined.ArrowDownward, Color(0xFF43856A), Modifier.weight(1f))
+                }
+            }
         }
     }
 
+    if (showSettingsDialog) {
+        BudgetSettingsDialog(
+            initial = settings,
+            onDismiss = { showSettingsDialog = false },
+            onSave = { updated ->
+                settings = updated
+                saveBudgetSettings(context, updated)
+                showSettingsDialog = false
+            },
+        )
+    }
+    if (showFixedCostDialog) {
+        FixedCostDialog(
+            onDismiss = { showFixedCostDialog = false },
+            onSave = { cost ->
+                val updated = listOf(cost) + fixedCosts
+                fixedCosts = updated
+                saveFixedCosts(context, updated)
+                showFixedCostDialog = false
+            },
+        )
+    }
+    if (showIrregularDialog) {
+        IrregularExpenseDialog(
+            onDismiss = { showIrregularDialog = false },
+            onSave = { expense ->
+                val updated = listOf(expense) + irregularExpenses
+                irregularExpenses = updated
+                saveIrregularExpenses(context, updated)
+                showIrregularDialog = false
+            },
+        )
+    }
     if (showDialog) {
         AddEntryDialog(
             onDismiss = { showDialog = false },
@@ -239,12 +367,310 @@ private fun SummaryTile(title: String, amount: Double, icon: androidx.compose.ui
 }
 
 @Composable
-private fun SectionTitle(title: String, trailing: String) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+private fun SectionTitle(title: String, trailing: String, modifier: Modifier = Modifier.fillMaxWidth()) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Text(title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Ink)
         Spacer(Modifier.weight(1f))
         Text(trailing, fontSize = 12.sp, color = Muted)
     }
+}
+
+@Composable
+private fun FixedCostRow(cost: FixedCost, onTogglePaid: () -> Unit) {
+    Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(cost.name, fontSize = 14.sp, color = Ink, fontWeight = FontWeight.Medium)
+                Text(
+                    "${cost.paymentType} · ${dueDayLabel(cost.dueDay)}",
+                    fontSize = 11.sp,
+                    color = Muted,
+                )
+            }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(money(cost.amount), fontSize = 14.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                TextButton(onClick = onTogglePaid) {
+                    Icon(
+                        Icons.Outlined.CheckCircle,
+                        contentDescription = null,
+                        tint = if (cost.isPaid) Color(0xFF43856A) else Color(0xFFB85C45),
+                        modifier = Modifier.size(15.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        if (cost.isPaid) "bezahlt" else "unbezahlt",
+                        fontSize = 11.sp,
+                        color = if (cost.isPaid) Color(0xFF43856A) else Color(0xFFB85C45),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IrregularExpenseRow(expense: IrregularExpense) {
+    Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(expense.name, fontSize = 14.sp, color = Ink, fontWeight = FontWeight.Medium)
+                Text("${expense.account} · ${expense.dueDate} · ${expense.count}×", fontSize = 11.sp, color = Muted)
+            }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(money(expense.total), fontSize = 14.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                if (expense.count > 1) Text("${money(expense.amount)} je Ausgabe", fontSize = 10.sp, color = Muted)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MonthSelector(monthOffset: Int, onSelect: (Int) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { expanded = true }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+            Text(if (monthOffset == 0) "aktueller Monat" else "nächster Monat", fontSize = 11.sp, color = Muted)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            listOf(0 to "aktueller Monat", 1 to "nächster Monat").forEach { (offset, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        onSelect(offset)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DropdownField(label: String, selected: String, options: List<String>, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Column {
+            Text(label, fontSize = 12.sp, color = Muted)
+            TextButton(
+                onClick = { expanded = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.textButtonColors(containerColor = Paper, contentColor = Ink),
+            ) {
+                Text(selected, modifier = Modifier.weight(1f))
+                Text("⌄", color = Muted)
+            }
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        onSelect(option)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BudgetSettingsDialog(
+    initial: BudgetSettings,
+    onDismiss: () -> Unit,
+    onSave: (BudgetSettings) -> Unit,
+) {
+    var balance by remember { mutableStateOf(initial.balance.inputValue()) }
+    var buffer by remember { mutableStateOf(initial.safetyBuffer.inputValue()) }
+    var salary by remember { mutableStateOf(initial.netSalary.inputValue()) }
+    var payday by remember { mutableStateOf(initial.paydayDay.toString()) }
+    var fixedDaily by remember { mutableStateOf(initial.fixedDailyAmount.inputValue()) }
+    val parsedBalance = balance.parseAmount()
+    val parsedBuffer = buffer.parseAmount()
+    val parsedSalary = salary.parseAmount()
+    val parsedPayday = payday.toIntOrNull()
+    val parsedFixedDaily = fixedDaily.parseAmount()
+    val valid = parsedBalance != null && parsedBalance >= 0 &&
+        parsedBuffer != null && parsedBuffer >= 0 &&
+        parsedSalary != null && parsedSalary >= 0 &&
+        parsedPayday != null && parsedPayday in 1..31 &&
+        parsedFixedDaily != null && parsedFixedDaily >= 0
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Budget einstellen", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                AmountField("Kontostand über alle Konten", balance) { balance = it }
+                AmountField("Sicherheits-Puffer", buffer) { buffer = it }
+                AmountField("Netto-Gehalt", salary) { salary = it }
+                OutlinedTextField(
+                    value = payday,
+                    onValueChange = { payday = it },
+                    label = { Text("Gehaltstag (1–31)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                AmountField("Fester Tageswert für Soll-Konto", fixedDaily) { fixedDaily = it }
+                Text("Tage bis zum Gehalt werden aus dem Gehaltstag berechnet.", fontSize = 11.sp, color = Muted)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        BudgetSettings(
+                            balance = parsedBalance!!,
+                            safetyBuffer = parsedBuffer!!,
+                            netSalary = parsedSalary!!,
+                            paydayDay = parsedPayday!!,
+                            fixedDailyAmount = parsedFixedDaily!!,
+                        ),
+                    )
+                },
+                enabled = valid,
+                colors = ButtonDefaults.buttonColors(containerColor = Forest),
+            ) { Text("Speichern") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen", color = Muted) } },
+        containerColor = Color.White,
+    )
+}
+
+@Composable
+private fun FixedCostDialog(onDismiss: () -> Unit, onSave: (FixedCost) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var paymentType by remember { mutableStateOf(PaymentTypes.first()) }
+    var status by remember { mutableStateOf("unbezahlt") }
+    var dueDay by remember { mutableStateOf("1") }
+    val parsedAmount = amount.parseAmount()
+    val parsedDueDay = dueDay.toIntOrNull()
+    val valid = name.isNotBlank() && parsedAmount != null && parsedAmount > 0 &&
+        parsedDueDay != null && parsedDueDay in -31..31
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Fixkosten hinzufügen", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("Bezeichnung") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                AmountField("Betrag in Euro", amount) { amount = it }
+                DropdownField("Zahlungsart", paymentType, PaymentTypes) { paymentType = it }
+                DropdownField("Status", status, listOf("bezahlt", "unbezahlt")) { status = it }
+                OutlinedTextField(
+                    dueDay,
+                    { dueDay = it },
+                    label = { Text("Fälligkeitstag (−31 bis 31)") },
+                    supportingText = { Text("Negative Werte zählen rückwärts vom Monatsende.") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        FixedCost(
+                            id = System.currentTimeMillis(),
+                            paymentType = paymentType,
+                            name = name.trim(),
+                            amount = parsedAmount!!,
+                            isPaid = status == "bezahlt",
+                            dueDay = parsedDueDay!!,
+                        ),
+                    )
+                },
+                enabled = valid,
+                colors = ButtonDefaults.buttonColors(containerColor = Forest),
+            ) { Text("Speichern") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen", color = Muted) } },
+        containerColor = Color.White,
+    )
+}
+
+@Composable
+private fun IrregularExpenseDialog(onDismiss: () -> Unit, onSave: (IrregularExpense) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var account by remember { mutableStateOf(ExpenseAccounts.first()) }
+    var dueDate by remember { mutableStateOf(LocalDate.now().toString()) }
+    var count by remember { mutableStateOf("1") }
+    val parsedAmount = amount.parseAmount()
+    val parsedCount = count.toIntOrNull()
+    val validDate = runCatching { LocalDate.parse(dueDate) }.isSuccess
+    val valid = name.isNotBlank() && parsedAmount != null && parsedAmount > 0 &&
+        parsedCount != null && parsedCount > 0 && validDate
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Unregelmäßige Ausgabe", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("Bezeichnung") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                AmountField("Betrag je Ausgabe", amount) { amount = it }
+                DropdownField("Konto", account, ExpenseAccounts) { account = it }
+                OutlinedTextField(
+                    dueDate,
+                    { dueDate = it },
+                    label = { Text("Fälligkeitsdatum (JJJJ-MM-TT)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    count,
+                    { count = it },
+                    label = { Text("Anzahl") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        IrregularExpense(
+                            id = System.currentTimeMillis(),
+                            name = name.trim(),
+                            amount = parsedAmount!!,
+                            account = account,
+                            dueDate = dueDate,
+                            count = parsedCount!!,
+                        ),
+                    )
+                },
+                enabled = valid,
+                colors = ButtonDefaults.buttonColors(containerColor = Forest),
+            ) { Text("Speichern") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen", color = Muted) } },
+        containerColor = Color.White,
+    )
+}
+
+@Composable
+private fun AmountField(label: String, value: String, onValueChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable
@@ -373,16 +799,14 @@ private fun spentFor(entries: List<Entry>, category: String): Double =
 private fun loadEntries(context: Context): List<Entry> {
     val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("entries", null)
         ?: return sampleEntries()
-    return runCatching {
-        val json = JSONArray(stored)
-        List(json.length()) { index ->
-            val item = json.getJSONObject(index)
-            Entry(
-                item.getLong("id"), item.getString("title"), item.getString("category"),
-                item.getDouble("amount"), item.getBoolean("income"), item.getString("date"),
-            )
-        }
-    }.getOrElse { sampleEntries() }
+    val json = JSONArray(stored)
+    return List(json.length()) { index ->
+        val item = json.getJSONObject(index)
+        Entry(
+            item.getLong("id"), item.getString("title"), item.getString("category"),
+            item.getDouble("amount"), item.getBoolean("income"), item.getString("date"),
+        )
+    }
 }
 
 private fun saveEntries(context: Context, entries: List<Entry>) {
@@ -398,6 +822,112 @@ private fun saveEntries(context: Context, entries: List<Entry>) {
         })
     }
     context.getSharedPreferences("budget", Context.MODE_PRIVATE).edit().putString("entries", json.toString()).apply()
+}
+
+private fun loadBudgetSettings(context: Context): BudgetSettings {
+    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("settings", null)
+        ?: return BudgetSettings()
+    val json = JSONObject(stored)
+    return BudgetSettings(
+        balance = json.getDouble("balance"),
+        safetyBuffer = json.getDouble("safetyBuffer"),
+        netSalary = json.getDouble("netSalary"),
+        paydayDay = json.getInt("paydayDay"),
+        fixedDailyAmount = json.getDouble("fixedDailyAmount"),
+    )
+}
+
+private fun loadMonthOffset(context: Context): Int =
+    context.getSharedPreferences("budget", Context.MODE_PRIVATE).getInt("monthOffset", 0).coerceIn(0, 1)
+
+private fun saveMonthOffset(context: Context, monthOffset: Int) {
+    context.getSharedPreferences("budget", Context.MODE_PRIVATE).edit().putInt("monthOffset", monthOffset).apply()
+}
+
+private fun saveBudgetSettings(context: Context, settings: BudgetSettings) {
+    val json = JSONObject().apply {
+        put("balance", settings.balance)
+        put("safetyBuffer", settings.safetyBuffer)
+        put("netSalary", settings.netSalary)
+        put("paydayDay", settings.paydayDay)
+        put("fixedDailyAmount", settings.fixedDailyAmount)
+    }
+    context.getSharedPreferences("budget", Context.MODE_PRIVATE).edit().putString("settings", json.toString()).apply()
+}
+
+private fun loadFixedCosts(context: Context): List<FixedCost> {
+    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("fixedCosts", null)
+        ?: return emptyList()
+    val json = JSONArray(stored)
+    return List(json.length()) { index ->
+        val item = json.getJSONObject(index)
+        FixedCost(
+            id = item.getLong("id"),
+            paymentType = item.getString("paymentType"),
+            name = item.getString("name"),
+            amount = item.getDouble("amount"),
+            isPaid = item.getBoolean("isPaid"),
+            dueDay = item.getInt("dueDay"),
+        )
+    }
+}
+
+private fun saveFixedCosts(context: Context, fixedCosts: List<FixedCost>) {
+    val json = JSONArray()
+    fixedCosts.forEach { cost ->
+        json.put(JSONObject().apply {
+            put("id", cost.id)
+            put("paymentType", cost.paymentType)
+            put("name", cost.name)
+            put("amount", cost.amount)
+            put("isPaid", cost.isPaid)
+            put("dueDay", cost.dueDay)
+        })
+    }
+    context.getSharedPreferences("budget", Context.MODE_PRIVATE).edit().putString("fixedCosts", json.toString()).apply()
+}
+
+private fun loadIrregularExpenses(context: Context): List<IrregularExpense> {
+    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("irregularExpenses", null)
+        ?: return emptyList()
+    val json = JSONArray(stored)
+    return List(json.length()) { index ->
+        val item = json.getJSONObject(index)
+        IrregularExpense(
+            id = item.getLong("id"),
+            name = item.getString("name"),
+            amount = item.getDouble("amount"),
+            account = item.getString("account"),
+            dueDate = item.getString("dueDate"),
+            count = item.getInt("count"),
+        )
+    }
+}
+
+private fun saveIrregularExpenses(context: Context, expenses: List<IrregularExpense>) {
+    val json = JSONArray()
+    expenses.forEach { expense ->
+        json.put(JSONObject().apply {
+            put("id", expense.id)
+            put("name", expense.name)
+            put("amount", expense.amount)
+            put("account", expense.account)
+            put("dueDate", expense.dueDate)
+            put("count", expense.count)
+        })
+    }
+    context.getSharedPreferences("budget", Context.MODE_PRIVATE)
+        .edit().putString("irregularExpenses", json.toString()).apply()
+}
+
+private fun String.parseAmount(): Double? = replace(',', '.').toDoubleOrNull()?.takeIf { it.isFinite() }
+
+private fun Double.inputValue(): String = toString()
+
+private fun dueDayLabel(day: Int): String = when {
+    day < 0 -> "Monatsende − ${-day} Tage"
+    day == 0 -> "Kein Fälligkeitstag"
+    else -> "Tag $day"
 }
 
 private fun sampleEntries(): List<Entry> {
