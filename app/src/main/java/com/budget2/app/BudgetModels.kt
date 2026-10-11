@@ -65,7 +65,12 @@ internal fun calculateBudget(
     val unpaidAmount = sumFixedCosts(fixedCosts, isPaid = false)
     val totalFixed = excelRound(paidAmount + unpaidAmount)
     val unpaidFixed = totalFixed - paidAmount
-    val referenceDate = if (monthOffset == 0) today else YearMonth.from(today).plusMonths(monthOffset.toLong()).atDay(1)
+
+    val referenceDate = if (monthOffset == 0) {
+        today
+    } else {
+        YearMonth.from(today).plusMonths(monthOffset.toLong()).atDay(1)
+    }
     val currentMonth = YearMonth.from(referenceDate)
     val paydayThisMonth = currentMonth.atDay(settings.paydayDay.coerceIn(1, currentMonth.lengthOfMonth()))
     val nextPayday = if (paydayThisMonth.isBefore(referenceDate)) {

@@ -56,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -72,12 +73,20 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private val Forest = Color(0xFF183A30)
-private val Leaf = Color(0xFFA9D7A0)
-private val Paper = Color(0xFFF5F4EF)
-private val Ink = Color(0xFF1C2924)
-private val Muted = Color(0xFF78817B)
-private val Line = Color(0xFFE8E7E0)
+private val Forest = Color(0xFF0F172A)
+private val ForestDeep = Color(0xFF0B1220)
+private val ForestSoft = Color(0xFF1D3557)
+private val Leaf = Color(0xFF34D399)
+private val LeafSoft = Color(0xFFB7F7D2)
+private val Coral = Color(0xFFFE7F6D)
+private val CoralSoft = Color(0xFFFFD5CC)
+private val Sand = Color(0xFFF3F8FF)
+private val Paper = Color(0xFFF4F7FB)
+private val PaperWarm = Color(0xFFEAF1FF)
+private val Ink = Color(0xFF102033)
+private val Muted = Color(0xFF62748A)
+private val Line = Color(0xFFE2EAF5)
+private val AccentGlow = Color(0xFF7DD3FC)
 private val Categories = listOf("Lebensmittel", "Wohnen", "Mobilität", "Freizeit", "Sonstiges")
 
 private data class Entry(
@@ -139,7 +148,7 @@ private fun BudgetScreen(context: Context) {
                 Button(
                     onClick = { showDialog = true },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp).height(54.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(18.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Forest),
                 ) {
                     Icon(Icons.Outlined.Add, contentDescription = null)
@@ -157,57 +166,82 @@ private fun BudgetScreen(context: Context) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        modifier = Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(Forest),
+                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Brush.linearGradient(listOf(Leaf, AccentGlow))),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Outlined.AccountBalanceWallet, contentDescription = null, tint = Leaf, modifier = Modifier.size(23.dp))
+                        Icon(Icons.Outlined.AccountBalanceWallet, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
                     }
                     Spacer(Modifier.width(12.dp))
                     Column {
-                        Text("BUDGET", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Forest)
+                        Text("BUDGET", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ForestSoft)
                         Text(month.replaceFirstChar { it.titlecase(Locale.GERMANY) }, fontSize = 13.sp, color = Muted)
                     }
                     Spacer(Modifier.weight(1f))
-                    Text("●", color = Color(0xFF56A477), fontSize = 13.sp)
-                    Spacer(Modifier.width(6.dp))
-                    MonthSelector(monthOffset) { selected ->
-                        monthOffset = selected
-                        saveMonthOffset(context, selected)
+                    Box(
+                        modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(Forest.copy(alpha = 0.06f)).padding(horizontal = 10.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("●", color = Leaf, fontSize = 10.sp)
+                            Spacer(Modifier.width(6.dp))
+                            MonthSelector(monthOffset) { selected ->
+                                monthOffset = selected
+                                saveMonthOffset(context, selected)
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                Card(
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = Forest),
+                    modifier = Modifier.fillMaxWidth(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Brush.verticalGradient(listOf(ForestSoft, ForestDeep))),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(22.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("DEIN TAGESBUDGET", fontSize = 11.sp, color = Color(0xFFB9C9BF), fontWeight = FontWeight.SemiBold, letterSpacing = 0.8.sp)
+                                Text(money(budget.dailyBudget), fontSize = 30.sp, color = Color.White, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Medium)
+                                Text("für ${budget.daysUntilPayday} Tage bis zum Gehalt", fontSize = 12.sp, color = Color(0xFFB9C9BF))
+                            }
+                            BudgetRing(progress = expensesProgress)
+                        }
                     }
                 }
             }
             item {
                 Card(
                     shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = Forest),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(22.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("DEIN TAGESBUDGET", fontSize = 11.sp, color = Color(0xFFB9C9BF), fontWeight = FontWeight.SemiBold)
-                            Text(money(budget.dailyBudget), fontSize = 30.sp, color = Color.White, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Medium)
-                            Text("für ${budget.daysUntilPayday} Tage bis zum Gehalt", fontSize = 12.sp, color = Color(0xFFB9C9BF))
+                    Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        SectionTitle("Übersicht", "3 Sektionen")
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            SummaryTile("Offene Fixkosten", budget.unpaidFixedCosts, Icons.Outlined.Schedule, Color(0xFFB85C45), Modifier.weight(1f))
+                            SummaryTile("Konto − Puffer", budget.balanceAfterBuffer, Icons.Outlined.AccountBalanceWallet, Color(0xFF43856A), Modifier.weight(1f))
+                            SummaryTile("Eingang", income, Icons.Outlined.ArrowDownward, Color(0xFF43856A), Modifier.weight(1f))
                         }
-                        BudgetRing(progress = expensesProgress)
                     }
                 }
             }
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SummaryTile("Offene Fixkosten", budget.unpaidFixedCosts, Icons.Outlined.Schedule, Color(0xFFB85C45), Modifier.weight(1f))
-                    SummaryTile("Konto − Puffer", budget.balanceAfterBuffer, Icons.Outlined.AccountBalanceWallet, Color(0xFF43856A), Modifier.weight(1f))
-                }
-            }
-            item {
-                Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Column(
                         Modifier.fillMaxWidth().padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        SectionTitle("Monatsübersicht", money(budget.totalFixedCosts))
+                        SectionTitle("Budget & Ziele", money(budget.totalFixedCosts))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Sparen nach Fixkosten", fontSize = 13.sp, color = Muted)
                             Text(money(budget.monthlySavings), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Ink)
@@ -255,7 +289,7 @@ private fun BudgetScreen(context: Context) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        SectionTitle("Unregelmäßige Ausgaben", "${irregularExpenses.size} gesamt", Modifier.weight(1f))
+                        SectionTitle("Ausgaben", "${irregularExpenses.size} gesamt", Modifier.weight(1f))
                         TextButton(onClick = { showIrregularDialog = true }) {
                             Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Text("Hinzufügen", fontSize = 12.sp)
@@ -341,13 +375,14 @@ private fun BudgetScreen(context: Context) {
 
 @Composable
 private fun BudgetRing(progress: Float) {
+    val safeProgress = progress.coerceIn(0f, 1f)
     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(94.dp)) {
         Canvas(Modifier.fillMaxSize()) {
-            drawArc(Color(0xFF49645A), -90f, 360f, false, style = Stroke(8.dp.toPx(), cap = StrokeCap.Round))
-            drawArc(Leaf, -90f, progress * 360f, false, style = Stroke(8.dp.toPx(), cap = StrokeCap.Round))
+            drawArc(Color(0xFF49645A), -90f, 360f, false, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round))
+            drawArc(Leaf, -90f, safeProgress * 360f, false, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round))
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("${(progress * 100).toInt()}%", fontSize = 20.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+            Text("${(safeProgress * 100).toInt()}%", fontSize = 20.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
             Text("genutzt", fontSize = 10.sp, color = Color(0xFFB9C9BF))
         }
     }
@@ -355,11 +390,21 @@ private fun BudgetRing(progress: Float) {
 
 @Composable
 private fun SummaryTile(title: String, amount: Double, icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, modifier: Modifier = Modifier) {
-    Card(modifier = modifier, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(17.dp))
-                Text(title, fontSize = 12.sp, color = Muted)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    modifier = Modifier.size(32.dp).clip(RoundedCornerShape(12.dp)).background(tint.copy(alpha = 0.10f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+                }
+                Text(title, fontSize = 12.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Text(money(amount), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Ink, maxLines = 1, softWrap = false)
         }
@@ -434,7 +479,11 @@ private fun IrregularExpenseRow(expense: IrregularExpense) {
 private fun MonthSelector(monthOffset: Int, onSelect: (Int) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        TextButton(onClick = { expanded = true }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+        TextButton(
+            onClick = { expanded = true },
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+            shape = RoundedCornerShape(10.dp),
+        ) {
             Text(if (monthOffset == 0) "aktueller Monat" else "nächster Monat", fontSize = 11.sp, color = Muted)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -675,6 +724,7 @@ private fun AmountField(label: String, value: String, onValueChange: (String) ->
 
 @Composable
 private fun BudgetLine(name: String, amount: Double, limit: Double, color: Color) {
+    val progress = if (limit <= 0.0) 0f else (amount / limit).toFloat().coerceIn(0f, 1f)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(name, fontSize = 13.sp, color = Ink, fontWeight = FontWeight.Medium)
@@ -682,8 +732,8 @@ private fun BudgetLine(name: String, amount: Double, limit: Double, color: Color
             Text(money(amount), fontSize = 12.sp, color = Ink, fontWeight = FontWeight.SemiBold)
             Text(" / ${money(limit)}", fontSize = 12.sp, color = Muted)
         }
-        Box(Modifier.fillMaxWidth().height(7.dp).clip(CircleShape).background(Line)) {
-            Box(Modifier.fillMaxWidth((amount / limit).toFloat().coerceIn(0f, 1f)).height(7.dp).clip(CircleShape).background(color))
+        Box(Modifier.fillMaxWidth().height(8.dp).clip(CircleShape).background(Line)) {
+            Box(Modifier.fillMaxWidth(progress).height(8.dp).clip(CircleShape).background(color))
         }
     }
 }
