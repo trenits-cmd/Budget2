@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.rosieinvoice"
+    namespace = "com.budget2.app"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.rosieinvoice"
+        applicationId = "com.budget2.app"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
