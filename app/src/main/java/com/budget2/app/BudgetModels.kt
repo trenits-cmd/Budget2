@@ -31,7 +31,7 @@ internal data class IrregularPayment(
 
 internal data class IncomeReceipt(
     val id: Long,
-    val targetMonth: String, // e.g. "Oktober", "November", etc.
+    val targetMonth: String,
     val name: String,
     val amount: Double,
     val date: LocalDate,
@@ -100,7 +100,7 @@ internal data class DashboardSummary(
 
 internal fun calculateDashboardSummary(
     fixedCosts: List<FixedCost>,
-    paidFixedCostIds: Set<Long> = emptySet(),
+    paidFixedCostIds: Set<Long>? = null,
     irregularPayments: List<IrregularPayment> = emptyList(),
     paidUnknownPaymentIds: Set<Long> = emptySet(),
     incomeReceipts: List<IncomeReceipt> = emptyList(),
@@ -126,11 +126,13 @@ internal fun calculateDashboardSummary(
         else isActiveMonth(payment.month, viewingDate)
     }
 
-    val paid = fixedCosts.filter { it.id in paidFixedCostIds }.sumOf { it.amount } +
-        budgetIrregular.filter { 
-            val clean = it.month.trim().lowercase()
-            if (clean == "unbekannt") it.id in paidUnknownPaymentIds else it.isPaid
-        }.sumOf { it.amount }
+    val paid = fixedCosts.sumOf { cost ->
+        val isPaid = paidFixedCostIds?.contains(cost.id) ?: cost.isPaid
+        if (isPaid) cost.amount else 0.0
+    } + budgetIrregular.filter { 
+        val clean = it.month.trim().lowercase()
+        if (clean == "unbekannt") it.id in paidUnknownPaymentIds else it.isPaid
+    }.sumOf { it.amount }
 
     val total = fixedCosts.sumOf { it.amount } + budgetIrregular.sumOf { it.amount }
     val remaining = (total - paid).roundToInt().toDouble()
@@ -164,17 +166,36 @@ internal fun calculateDashboardSummary(
 
 internal const val DAILY_TARGET = 60.0
 
-internal fun paymentTypeTotals(fixedCosts: List<FixedCost>): List<PaymentTypeTotal> =
-    PaymentTypes.mapNotNull { paymentType ->
-        val costs = fixedCosts.filter { it.paymentType == paymentType }
+internal fun paymentTypeTotals(
+    fixedCosts: List<FixedCost>,
+    irregularPayments: List<IrregularPayment> = emptyList(),
+    viewingDate: LocalDate = LocalDate.now(),
+    paidFixedCostIds: Set<Long>? = null,
+    paidUnknownPaymentIds: Set<Long> = emptySet(),
+): List<PaymentTypeTotal> {
+    val activeIrregular = irregularPayments.filter { isActiveMonth(it.month, viewingDate) }
+    val allCosts = mutableListOf<Triple<String, Double, Boolean>>()
+    fixedCosts.forEach { cost ->
+        val isPaid = paidFixedCostIds?.contains(cost.id) ?: cost.isPaid
+        allCosts.add(Triple(cost.paymentType, cost.amount, isPaid))
+    }
+    activeIrregular.forEach { payment ->
+        val clean = payment.month.trim().lowercase()
+        val isPaid = if (clean == "unbekannt") payment.id in paidUnknownPaymentIds else payment.isPaid
+        allCosts.add(Triple(payment.paymentType, payment.amount, isPaid))
+    }
+    
+    return PaymentTypes.mapNotNull { paymentType ->
+        val costs = allCosts.filter { it.first == paymentType }
         if (costs.isEmpty()) {
             null
         } else {
-            val paid = costs.filter { it.isPaid }.sumOf { it.amount }
-            val unpaid = costs.filterNot { it.isPaid }.sumOf { it.amount }
+            val paid = costs.filter { it.third }.sumOf { it.second }
+            val unpaid = costs.filterNot { it.third }.sumOf { it.second }
             PaymentTypeTotal(paymentType, paid + unpaid, paid, unpaid)
         }
     }
+}
 
 internal fun updateFixedCostStatus(
     fixedCosts: List<FixedCost>,

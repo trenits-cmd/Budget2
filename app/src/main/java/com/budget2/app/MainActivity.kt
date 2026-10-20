@@ -441,7 +441,13 @@ private fun DashboardTab(
     val paidFixedIds = paidFixedCostsMap[monthKey] ?: emptySet()
     val paidUnknownIds = paidUnknownPaymentsMap[monthKey] ?: emptySet()
 
-    val totals = paymentTypeTotals(fixedCosts)
+    val totals = paymentTypeTotals(
+        fixedCosts = fixedCosts,
+        irregularPayments = irregularPayments,
+        viewingDate = viewingDate,
+        paidFixedCostIds = paidFixedIds,
+        paidUnknownPaymentIds = paidUnknownIds,
+    )
     val summary = calculateDashboardSummary(
         fixedCosts = fixedCosts,
         paidFixedCostIds = paidFixedIds,
@@ -647,32 +653,41 @@ private fun DashboardSummary(label: String, value: String, modifier: Modifier, t
 
 @Composable
 private fun PaymentTypeBar(total: PaymentTypeTotal, maxTotal: Double) {
+    val paidPercent = if (total.total > 0) (total.paid / total.total * 100).toInt() else 0
+    val unpaidPercent = if (total.total > 0) (total.unpaid / total.total * 100).toInt() else 0
+
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(total.paymentType, modifier = Modifier.weight(1f), fontSize = 13.sp, color = Ink, fontWeight = FontWeight.Medium)
-            Text(money(total.total), fontSize = 13.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+            Text("Gesamt: ${money(total.total)}", fontSize = 13.sp, color = Ink, fontWeight = FontWeight.SemiBold)
         }
-        Box(
-            Modifier.fillMaxWidth().height(14.dp).clip(RoundedCornerShape(99.dp)).background(PaidBackground),
-            contentAlignment = Alignment.CenterStart,
+        Row(
+            Modifier.fillMaxWidth().height(22.dp).clip(RoundedCornerShape(99.dp)).background(Paper),
         ) {
-            val fraction = if (maxTotal > 0) (total.total / maxTotal).toFloat().coerceIn(0f, 1f) else 0f
-            if (fraction > 0f) {
+            if (total.paid > 0) {
                 Box(
-                    Modifier.fillMaxWidth(fraction).height(14.dp).clip(RoundedCornerShape(99.dp)),
-                    contentAlignment = Alignment.CenterStart,
+                    Modifier.weight(total.paid.toFloat()).height(22.dp).background(PaidTint),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Box(Modifier.fillMaxSize().background(UnpaidTint))
-                    val paidFraction = if (total.total > 0) (total.paid / total.total).toFloat().coerceIn(0f, 1f) else 0f
-                    if (paidFraction > 0f) {
-                        Box(Modifier.fillMaxWidth(paidFraction).fillMaxSize().background(PaidTint))
+                    if (total.paid / total.total >= 0.15) {
+                        Text("$paidPercent% · ${money(total.paid)}", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+                }
+            }
+            if (total.unpaid > 0) {
+                Box(
+                    Modifier.weight(total.unpaid.toFloat()).height(22.dp).background(UnpaidTint),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (total.unpaid / total.total >= 0.15) {
+                        Text("$unpaidPercent% · ${money(total.unpaid)}", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
                     }
                 }
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Bezahlt ${money(total.paid)}", fontSize = 10.sp, color = PaidTint)
-            Text("Offen ${money(total.unpaid)}", fontSize = 10.sp, color = UnpaidTint)
+            Text("Bezahlt: $paidPercent% (${money(total.paid)})", fontSize = 10.sp, color = PaidTint, fontWeight = FontWeight.SemiBold)
+            Text("Offen: $unpaidPercent% (${money(total.unpaid)})", fontSize = 10.sp, color = UnpaidTint, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -680,16 +695,22 @@ private fun PaymentTypeBar(total: PaymentTypeTotal, maxTotal: Double) {
 @Composable
 private fun StatusBar(label: String, amount: Double, total: Double, tint: Color) {
     val fraction = if (total > 0) (amount / total).toFloat().coerceIn(0f, 1f) else 0f
+    val percent = if (total > 0) (amount / total * 100).toInt() else 0
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, modifier = Modifier.weight(1f), fontSize = 13.sp, color = Ink)
-            Text(money(amount), fontSize = 13.sp, color = tint, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.width(8.dp))
-            Text("${(fraction * 100).toInt()}%", fontSize = 12.sp, color = Muted)
+            Text(label, modifier = Modifier.weight(1f), fontSize = 13.sp, color = Ink, fontWeight = FontWeight.Medium)
+            Text("$percent% · ${money(amount)}", fontSize = 13.sp, color = tint, fontWeight = FontWeight.SemiBold)
         }
-        Box(Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(99.dp)).background(Paper)) {
+        Box(Modifier.fillMaxWidth().height(16.dp).clip(RoundedCornerShape(99.dp)).background(Paper)) {
             if (fraction > 0f) {
-                Box(Modifier.fillMaxWidth(fraction).fillMaxSize().clip(RoundedCornerShape(99.dp)).background(tint))
+                Box(
+                    Modifier.fillMaxWidth(fraction).height(16.dp).clip(RoundedCornerShape(99.dp)).background(tint),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (fraction >= 0.15f) {
+                        Text("$percent% (${money(amount)})", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+                }
             }
         }
     }
@@ -1074,6 +1095,7 @@ private fun DashboardSettingsCard(
 ) {
     var balance by remember(settings) { mutableStateOf(settings.balance.toInt().toString()) }
     var minimumBuffer by remember(settings) { mutableStateOf(settings.minimumBuffer.toInt().toString()) }
+    var showSavedMessage by remember { mutableStateOf(false) }
     val parsedBalance = balance.trim().toIntOrNull()?.toDouble() ?: 0.0
     val parsedBuffer = minimumBuffer.trim().toIntOrNull()?.toDouble() ?: 0.0
     val valid = parsedBuffer >= 0
@@ -1092,19 +1114,31 @@ private fun DashboardSettingsCard(
                 fontSize = 12.sp,
                 color = Muted,
             )
-            AmountField("Aktueller Kontostand in Euro", balance, keyboardType = KeyboardType.Number) { balance = it }
-            AmountField("Mindestpuffer (Tabellenblatt B25)", minimumBuffer, keyboardType = KeyboardType.Number) { minimumBuffer = it }
+            AmountField("Aktueller Kontostand in Euro", balance, keyboardType = KeyboardType.Number) { 
+                balance = it
+                showSavedMessage = false
+            }
+            AmountField("Mindestpuffer", minimumBuffer, keyboardType = KeyboardType.Number) { 
+                minimumBuffer = it
+                showSavedMessage = false
+            }
             Text("Zahltags-Offset: 0 Tage · Tagesziel: ${money(DAILY_TARGET)}", fontSize = 11.sp, color = Muted)
-            Button(
-                onClick = {
-                    if (valid) {
-                        onSave(DashboardSettings(parsedBalance, parsedBuffer))
-                    }
-                },
-                enabled = valid,
-                colors = ButtonDefaults.buttonColors(containerColor = Forest),
-            ) {
-                Text("Dashboard-Werte speichern")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = {
+                        if (valid) {
+                            onSave(DashboardSettings(parsedBalance, parsedBuffer))
+                            showSavedMessage = true
+                        }
+                    },
+                    enabled = valid,
+                    colors = ButtonDefaults.buttonColors(containerColor = Forest),
+                ) {
+                    Text("Dashboard-Werte speichern")
+                }
+                if (showSavedMessage) {
+                    Text("✓ Gespeichert!", fontSize = 12.sp, color = PaidTint, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
