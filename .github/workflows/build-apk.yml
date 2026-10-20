@@ -1,0 +1,69 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+
+      - name: Java (JDK 17) einrichten
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Ausführungsrechte für Gradle vergeben
+        run: chmod +x gradlew
+
+      - name: Release-Schluessel optional einrichten
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          configured_count=0
+          for value in \
+            "$ANDROID_KEYSTORE_BASE64" \
+            "$ANDROID_KEYSTORE_PASSWORD" \
+            "$ANDROID_KEY_ALIAS" \
+            "$ANDROID_KEY_PASSWORD"; do
+            if [ -n "$value" ]; then
+              configured_count=$((configured_count + 1))
+            fi
+          done
+
+          if [ "$configured_count" -eq 0 ]; then
+            echo "::warning::Kein Release-Schluessel konfiguriert; die APK wird mit dem temporaeren Debug-Schluessel dieses Runners signiert."
+            exit 0
+          fi
+
+          if [ "$configured_count" -ne 4 ]; then
+            echo "::error::Release-Signierung erfordert alle vier ANDROID_KEYSTORE_*- und ANDROID_KEY_*-Secrets."
+            exit 1
+          fi
+
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/budget2-release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/budget2-release.jks" >> "$GITHUB_ENV"
+
+      - name: Release-APK erstellen
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ env.ANDROID_KEYSTORE_PATH }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease
+
+      - name: APK hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          
