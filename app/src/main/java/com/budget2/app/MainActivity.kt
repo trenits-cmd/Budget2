@@ -98,17 +98,29 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 private fun FixedCostsApp(context: Context) {
     var fixedCosts by remember { mutableStateOf(loadFixedCosts(context)) }
+    var irregularPayments by remember { mutableStateOf(loadIrregularPayments(context)) }
     var dashboardSettings by remember { mutableStateOf(loadDashboardSettings(context)) }
     var selectedTab by remember { mutableStateOf(0) }
     var showEditor by remember { mutableStateOf(false) }
     var editingCost by remember { mutableStateOf<FixedCost?>(null) }
     var deletingCost by remember { mutableStateOf<FixedCost?>(null) }
     var confirmReset by remember { mutableStateOf(false) }
+
+    var showIrregularEditor by remember { mutableStateOf(false) }
+    var editingIrregular by remember { mutableStateOf<IrregularPayment?>(null) }
+    var deletingIrregular by remember { mutableStateOf<IrregularPayment?>(null) }
+    var confirmIrregularReset by remember { mutableStateOf(false) }
+
     val currentMonth = LocalDate.now().format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.GERMANY))
 
     fun updateCosts(updated: List<FixedCost>) {
         fixedCosts = updated
         saveFixedCosts(context, updated)
+    }
+
+    fun updateIrregular(updated: List<IrregularPayment>) {
+        irregularPayments = updated
+        saveIrregularPayments(context, updated)
     }
 
     Scaffold(
@@ -128,7 +140,7 @@ private fun FixedCostsApp(context: Context) {
                     )
                 }
                 TabRow(selectedTabIndex = selectedTab, containerColor = Color.White) {
-                    listOf("Fixkosten", "Dashboard", "Settings").forEachIndexed { index, title ->
+                    listOf("Fixkosten", "Unregelmäßig", "Dashboard", "Settings").forEachIndexed { index, title ->
                         Tab(
                             selected = selectedTab == index,
                             onClick = { selectedTab = index },
@@ -142,19 +154,41 @@ private fun FixedCostsApp(context: Context) {
         when (selectedTab) {
             0 -> FixedCostsTab(
                 fixedCosts = fixedCosts,
+                irregularPayments = irregularPayments,
                 modifier = Modifier.padding(padding),
-                onToggleStatus = { cost, isPaid ->
+                onToggleFixedCost = { cost, isPaid ->
                     updateCosts(updateFixedCostStatus(fixedCosts, cost.id, isPaid))
                 },
+                onToggleIrregular = { payment, isPaid ->
+                    updateIrregular(updateIrregularPaymentStatus(irregularPayments, payment.id, isPaid))
+                },
                 onResetStatuses = { confirmReset = true },
-                onGoToSettings = { selectedTab = 2 },
+                onGoToSettings = { selectedTab = 3 },
             )
-            1 -> DashboardTab(
+            1 -> IrregularPaymentsTab(
+                irregularPayments = irregularPayments,
+                modifier = Modifier.padding(padding),
+                onToggleStatus = { payment, isPaid ->
+                    updateIrregular(updateIrregularPaymentStatus(irregularPayments, payment.id, isPaid))
+                },
+                onResetStatuses = { confirmIrregularReset = true },
+                onAdd = {
+                    editingIrregular = null
+                    showIrregularEditor = true
+                },
+                onEdit = { payment ->
+                    editingIrregular = payment
+                    showIrregularEditor = true
+                },
+                onDelete = { deletingIrregular = it },
+            )
+            2 -> DashboardTab(
                 fixedCosts = fixedCosts,
+                irregularPayments = irregularPayments,
                 settings = dashboardSettings,
                 modifier = Modifier.padding(padding),
             )
-            2 -> SettingsTab(
+            3 -> SettingsTab(
                 fixedCosts = fixedCosts,
                 dashboardSettings = dashboardSettings,
                 modifier = Modifier.padding(padding),
@@ -202,6 +236,33 @@ private fun FixedCostsApp(context: Context) {
         }
     }
 
+    if (showIrregularEditor) {
+        key(editingIrregular?.id) {
+            IrregularPaymentEditorDialog(
+                initial = editingIrregular,
+                onDismiss = { showIrregularEditor = false },
+                onSave = { month, paymentType, name, amount ->
+                    val existing = editingIrregular
+                    val updatedPayment = IrregularPayment(
+                        id = existing?.id ?: ((irregularPayments.maxOfOrNull { it.id } ?: 0L) + 1L),
+                        month = month,
+                        paymentType = paymentType,
+                        name = name,
+                        amount = amount,
+                        isPaid = existing?.isPaid ?: false,
+                    )
+                    val updated = if (existing == null) {
+                        irregularPayments + updatedPayment
+                    } else {
+                        irregularPayments.map { if (it.id == existing.id) updatedPayment else it }
+                    }
+                    updateIrregular(updated)
+                    showIrregularEditor = false
+                },
+            )
+        }
+    }
+
     deletingCost?.let { cost ->
         AlertDialog(
             onDismissRequest = { deletingCost = null },
@@ -218,6 +279,27 @@ private fun FixedCostsApp(context: Context) {
             },
             dismissButton = {
                 TextButton(onClick = { deletingCost = null }) { Text("Abbrechen", color = Muted) }
+            },
+            containerColor = Color.White,
+        )
+    }
+
+    deletingIrregular?.let { payment ->
+        AlertDialog(
+            onDismissRequest = { deletingIrregular = null },
+            title = { Text("Unregelmäßige Zahlung löschen?") },
+            text = { Text("„${payment.name}“ wird gelöscht.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        updateIrregular(irregularPayments.filterNot { it.id == payment.id })
+                        deletingIrregular = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = UnpaidTint),
+                ) { Text("Löschen") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingIrregular = null }) { Text("Abbrechen", color = Muted) }
             },
             containerColor = Color.White,
         )
@@ -243,19 +325,42 @@ private fun FixedCostsApp(context: Context) {
             containerColor = Color.White,
         )
     }
+
+    if (confirmIrregularReset) {
+        AlertDialog(
+            onDismissRequest = { confirmIrregularReset = false },
+            title = { Text("Alle unregelmäßigen als unbezahlt markieren?") },
+            text = { Text("Der Status aller unregelmäßigen Zahlungen wird auf „unbezahlt“ gesetzt.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        updateIrregular(setAllIrregularPaymentsStatus(irregularPayments, isPaid = false))
+                        confirmIrregularReset = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Forest),
+                ) { Text("Zurücksetzen") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmIrregularReset = false }) { Text("Abbrechen", color = Muted) }
+            },
+            containerColor = Color.White,
+        )
+    }
 }
 
 @Composable
 private fun DashboardTab(
     fixedCosts: List<FixedCost>,
+    irregularPayments: List<IrregularPayment>,
     settings: DashboardSettings,
     modifier: Modifier = Modifier,
 ) {
     val totals = paymentTypeTotals(fixedCosts)
-    val summary = calculateDashboardSummary(fixedCosts, settings)
-    val total = fixedCosts.sumOf { it.amount }
-    val paid = fixedCosts.filter { it.isPaid }.sumOf { it.amount }
-    val unpaid = fixedCosts.filterNot { it.isPaid }.sumOf { it.amount }
+    val summary = calculateDashboardSummary(fixedCosts, irregularPayments, settings)
+    val currentMonthIrregular = irregularPayments.filter { isCurrentMonth(it.month) }
+    val total = fixedCosts.sumOf { it.amount } + currentMonthIrregular.sumOf { it.amount }
+    val paid = fixedCosts.filter { it.isPaid }.sumOf { it.amount } + currentMonthIrregular.filter { it.isPaid }.sumOf { it.amount }
+    val unpaid = total - paid
     val maxPaymentTypeTotal = totals.maxOfOrNull { it.total } ?: 0.0
 
     LazyColumn(
@@ -266,7 +371,7 @@ private fun DashboardTab(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Dashboard", fontSize = 20.sp, color = Ink, fontWeight = FontWeight.SemiBold)
-                Text("Kostenübersicht deiner monatlichen Fixkosten", fontSize = 13.sp, color = Muted)
+                Text("Kostenübersicht deiner monatlichen Fixkosten & Zahlungen", fontSize = 13.sp, color = Muted)
             }
         }
         item {
@@ -283,6 +388,31 @@ private fun DashboardTab(
                     modifier = Modifier.weight(1f),
                     tint = UnpaidTint,
                 )
+            }
+        }
+        if (summary.unknownMonthIrregularPayments.isNotEmpty()) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                ) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text("Unregelmäßige Zahlungen (Monat: unbekannt)", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                        Text("Diese Zahlungen haben keinen festen Monat und sind im Dashboard gelistet:", fontSize = 12.sp, color = Muted)
+                        summary.unknownMonthIrregularPayments.forEach { payment ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(payment.name, fontSize = 13.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                                    Text("${payment.paymentType} · ${money(payment.amount)}", fontSize = 12.sp, color = Muted)
+                                }
+                                Text(if (payment.isPaid) "bezahlt" else "offen", fontSize = 11.sp, color = if (payment.isPaid) PaidTint else UnpaidTint, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
             }
         }
         item {
@@ -317,7 +447,7 @@ private fun DashboardTab(
                             tint = Forest,
                         )
                     }
-                    DashboardMetric("Bezahlte Fixkosten", money(summary.paidFixedCosts), PaidTint)
+                    DashboardMetric("Bezahlte Fixkosten (inkl. Monats-Zahlungen)", money(summary.paidFixedCosts), PaidTint)
                     DashboardMetric("Restliche Fixkosten", money(summary.remainingFixedCosts), UnpaidTint)
                 }
             }
@@ -384,20 +514,12 @@ private fun DashboardTab(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text("Zahlungsstatus", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
-                        Text("Anteil an den gesamten Fixkosten", fontSize = 12.sp, color = Muted)
+                        Text("Anteil an den gesamten Kosten", fontSize = 12.sp, color = Muted)
                     }
                     StatusBar("Bezahlt", paid, total, PaidTint)
                     StatusBar("Unbezahlt", unpaid, total, UnpaidTint)
                 }
             }
-        }
-        item {
-            Text(
-                "${fixedCosts.size} Fixkosten · ${fixedCosts.count { it.isPaid }} bezahlt · ${fixedCosts.count { !it.isPaid }} unbezahlt",
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-                fontSize = 12.sp,
-                color = Muted,
-            )
         }
     }
 }
@@ -488,12 +610,18 @@ private fun DashboardLegend(color: Color, label: String) {
 @Composable
 private fun FixedCostsTab(
     fixedCosts: List<FixedCost>,
+    irregularPayments: List<IrregularPayment>,
     modifier: Modifier = Modifier,
-    onToggleStatus: (FixedCost, Boolean) -> Unit,
+    onToggleFixedCost: (FixedCost, Boolean) -> Unit,
+    onToggleIrregular: (IrregularPayment, Boolean) -> Unit,
     onResetStatuses: () -> Unit,
     onGoToSettings: () -> Unit,
 ) {
-    val unpaidCount = fixedCosts.count { !it.isPaid }
+    val currentMonthIrregular = irregularPayments.filter { isCurrentMonth(it.month) }
+    val totalCount = fixedCosts.size + currentMonthIrregular.size
+    val unpaidCount = fixedCosts.count { !it.isPaid } + currentMonthIrregular.count { !it.isPaid }
+    val hasPaid = fixedCosts.any { it.isPaid } || currentMonthIrregular.any { it.isPaid }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 24.dp),
@@ -502,16 +630,16 @@ private fun FixedCostsTab(
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("${fixedCosts.size} Zwecke", fontSize = 17.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                    Text("$totalCount Zwecke (inkl. Monats-Zahlungen)", fontSize = 17.sp, color = Ink, fontWeight = FontWeight.SemiBold)
                     Text("$unpaidCount unbezahlt", fontSize = 13.sp, color = if (unpaidCount > 0) UnpaidTint else PaidTint)
                 }
-                TextButton(onClick = onResetStatuses, enabled = fixedCosts.any { it.isPaid }) {
+                TextButton(onClick = onResetStatuses, enabled = hasPaid) {
                     Text("Alle unbezahlt", fontSize = 12.sp)
                 }
             }
         }
         item { FixedCostTableHeader() }
-        if (fixedCosts.isEmpty()) {
+        if (fixedCosts.isEmpty() && currentMonthIrregular.isEmpty()) {
             item {
                 Card(
                     shape = RoundedCornerShape(18.dp),
@@ -521,15 +649,92 @@ private fun FixedCostsTab(
                         Modifier.fillMaxWidth().padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text("Noch keine Fixkosten vorhanden.", color = Ink, fontWeight = FontWeight.Medium)
-                        Text("Lege deine Zwecke im Tab „Settings“ an.", color = Muted, fontSize = 13.sp)
+                        Text("Noch keine Fixkosten oder Zahlungen für diesen Monat.", color = Ink, fontWeight = FontWeight.Medium)
+                        Text("Lege Fixkosten in Settings oder unregelmäßige Zahlungen im Tab an.", color = Muted, fontSize = 13.sp)
                         TextButton(onClick = onGoToSettings) { Text("Zu Settings") }
                     }
                 }
             }
         } else {
-            items(fixedCosts, key = { it.id }) { cost ->
-                FixedCostTableRow(cost, onToggleStatus)
+            items(fixedCosts, key = { "fc_${it.id}" }) { cost ->
+                FixedCostTableRow(cost, onToggleFixedCost)
+            }
+            items(currentMonthIrregular, key = { "irr_${it.id}" }) { payment ->
+                IrregularPaymentTableRowInFixkosten(payment, onToggleIrregular)
+            }
+        }
+    }
+}
+
+@Composable
+private fun IrregularPaymentsTab(
+    irregularPayments: List<IrregularPayment>,
+    modifier: Modifier = Modifier,
+    onToggleStatus: (IrregularPayment, Boolean) -> Unit,
+    onResetStatuses: () -> Unit,
+    onAdd: () -> Unit,
+    onEdit: (IrregularPayment) -> Unit,
+    onDelete: (IrregularPayment) -> Unit,
+) {
+    val unpaidCount = irregularPayments.count { !it.isPaid }
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("${irregularPayments.size} unregelmäßige Zahlungen", fontSize = 17.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                    Text("$unpaidCount unbezahlt", fontSize = 13.sp, color = if (unpaidCount > 0) UnpaidTint else PaidTint)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onResetStatuses, enabled = irregularPayments.any { it.isPaid }) {
+                        Text("Alle unbezahlt", fontSize = 12.sp)
+                    }
+                    Button(
+                        onClick = onAdd,
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Forest),
+                    ) {
+                        Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("Neu", fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+        item {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TableCell("Monat", Modifier.weight(1.1f))
+                TableCell("Zahlungsart", Modifier.weight(1.1f))
+                TableCell("Zweck", Modifier.weight(1.3f))
+                TableCell("Betrag", Modifier.weight(1.0f))
+                TableCell("Status", Modifier.weight(1.05f))
+            }
+        }
+        if (irregularPayments.isEmpty()) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                ) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("Noch keine unregelmäßigen Zahlungen vorhanden.", color = Ink, fontWeight = FontWeight.Medium)
+                        Text("Füge Zahlungen mit spezifischem Monat oder „unbekannt“ hinzu.", color = Muted, fontSize = 13.sp)
+                    }
+                }
+            }
+        } else {
+            items(irregularPayments.sortedBy { it.month }, key = { it.id }) { payment ->
+                IrregularPaymentTableRow(payment, onToggleStatus, onEdit, onDelete)
             }
         }
     }
@@ -572,6 +777,71 @@ private fun FixedCostTableRow(cost: FixedCost, onToggleStatus: (FixedCost, Boole
                 )
             }
             TableCell(cost.dueDay.toString(), Modifier.weight(0.75f), color = Ink)
+        }
+    }
+}
+
+@Composable
+private fun IrregularPaymentTableRowInFixkosten(payment: IrregularPayment, onToggleStatus: (IrregularPayment, Boolean) -> Unit) {
+    val tint = if (payment.isPaid) PaidTint else UnpaidTint
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = if (payment.isPaid) PaidBackground else UnpaidBackground),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TableCell(payment.paymentType, Modifier.weight(1.2f), color = Ink)
+            TableCell("${payment.name} (Unregelmäßig)", Modifier.weight(1.3f), color = Ink, bold = true)
+            TableCell(money(payment.amount), Modifier.weight(1.1f), color = Ink)
+            Column(Modifier.weight(1.05f), horizontalAlignment = Alignment.Start) {
+                Text(if (payment.isPaid) "bezahlt" else "unbezahlt", fontSize = 10.sp, color = tint, fontWeight = FontWeight.SemiBold)
+                Switch(
+                    checked = payment.isPaid,
+                    onCheckedChange = { onToggleStatus(payment, it) },
+                    modifier = Modifier.height(32.dp),
+                )
+            }
+            TableCell(payment.month, Modifier.weight(0.75f), color = Muted)
+        }
+    }
+}
+
+@Composable
+private fun IrregularPaymentTableRow(
+    payment: IrregularPayment,
+    onToggleStatus: (IrregularPayment, Boolean) -> Unit,
+    onEdit: (IrregularPayment) -> Unit,
+    onDelete: (IrregularPayment) -> Unit,
+) {
+    val tint = if (payment.isPaid) PaidTint else UnpaidTint
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = if (payment.isPaid) PaidBackground else UnpaidBackground),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TableCell(payment.month, Modifier.weight(1.1f), color = Ink, bold = true)
+            TableCell(payment.paymentType, Modifier.weight(1.1f), color = Ink)
+            TableCell(payment.name, Modifier.weight(1.3f), color = Ink, bold = true)
+            TableCell(money(payment.amount), Modifier.weight(1.0f), color = Ink)
+            Column(Modifier.weight(1.05f), horizontalAlignment = Alignment.Start) {
+                Text(if (payment.isPaid) "bezahlt" else "unbezahlt", fontSize = 10.sp, color = tint, fontWeight = FontWeight.SemiBold)
+                Switch(
+                    checked = payment.isPaid,
+                    onCheckedChange = { onToggleStatus(payment, it) },
+                    modifier = Modifier.height(32.dp),
+                )
+            }
+            IconButton(onClick = { onEdit(payment) }, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Outlined.Edit, contentDescription = "Bearbeiten", tint = Forest, modifier = Modifier.size(16.dp))
+            }
+            IconButton(onClick = { onDelete(payment) }, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Outlined.DeleteOutline, contentDescription = "Löschen", tint = UnpaidTint, modifier = Modifier.size(16.dp))
+            }
         }
     }
 }
@@ -673,11 +943,11 @@ private fun DashboardSettingsCard(
     settings: DashboardSettings,
     onSave: (DashboardSettings) -> Unit,
 ) {
-    var balance by remember(settings) { mutableStateOf(settings.balance.inputValue()) }
-    var minimumBuffer by remember(settings) { mutableStateOf(settings.minimumBuffer.inputValue()) }
-    val parsedBalance = balance.parseAmount()
-    val parsedBuffer = minimumBuffer.parseAmount()
-    val valid = parsedBalance != null && parsedBuffer != null && parsedBuffer >= 0
+    var balance by remember(settings) { mutableStateOf(settings.balance.toInt().toString()) }
+    var minimumBuffer by remember(settings) { mutableStateOf(settings.minimumBuffer.toInt().toString()) }
+    val parsedBalance = balance.trim().toIntOrNull()?.toDouble() ?: 0.0
+    val parsedBuffer = minimumBuffer.trim().toIntOrNull()?.toDouble() ?: 0.0
+    val valid = parsedBuffer >= 0
 
     Card(
         shape = RoundedCornerShape(18.dp),
@@ -693,13 +963,13 @@ private fun DashboardSettingsCard(
                 fontSize = 12.sp,
                 color = Muted,
             )
-            AmountField("Aktueller Kontostand in Euro", balance) { balance = it }
-            AmountField("Mindestpuffer (Tabellenblatt B25)", minimumBuffer) { minimumBuffer = it }
+            AmountField("Aktueller Kontostand in Euro", balance, keyboardType = KeyboardType.Number) { balance = it }
+            AmountField("Mindestpuffer (Tabellenblatt B25)", minimumBuffer, keyboardType = KeyboardType.Number) { minimumBuffer = it }
             Text("Zahltags-Offset: 0 Tage · Tagesziel: ${money(DAILY_TARGET)}", fontSize = 11.sp, color = Muted)
             Button(
                 onClick = {
                     if (valid) {
-                        onSave(DashboardSettings(requireNotNull(parsedBalance), requireNotNull(parsedBuffer)))
+                        onSave(DashboardSettings(parsedBalance, parsedBuffer))
                     }
                 },
                 enabled = valid,
@@ -771,13 +1041,75 @@ private fun FixedCostEditorDialog(
 }
 
 @Composable
-private fun AmountField(label: String, value: String, onValueChange: (String) -> Unit) {
+private fun IrregularPaymentEditorDialog(
+    initial: IrregularPayment?,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, Double) -> Unit,
+) {
+    var month by remember { mutableStateOf(initial?.month ?: LocalDate.now().format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.GERMANY))) }
+    var name by remember { mutableStateOf(initial?.name.orEmpty()) }
+    var amount by remember { mutableStateOf(initial?.amount?.inputValue().orEmpty()) }
+    var paymentType by remember { mutableStateOf(initial?.paymentType ?: PaymentTypes.first()) }
+    
+    val parsedAmount = amount.parseAmount()
+    val valid = name.isNotBlank() && month.isNotBlank() && parsedAmount != null && parsedAmount >= 0
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Unregelmäßige Zahlung hinzufügen" else "Unregelmäßige Zahlung bearbeiten", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = month,
+                    onValueChange = { month = it },
+                    label = { Text("Monat (z.B. aktueller Monat oder „unbekannt“)") },
+                    supportingText = { Text("Tippe z.B. „unbekannt“ oder den Monatsnamen.") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Verwendungszweck") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                AmountField("Betrag in Euro", amount) { amount = it }
+                DropdownField("Zahlungsart", paymentType, PaymentTypes) { paymentType = it }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (valid) onSave(
+                        month.trim(),
+                        paymentType,
+                        name.trim(),
+                        requireNotNull(parsedAmount),
+                    )
+                },
+                enabled = valid,
+                colors = ButtonDefaults.buttonColors(containerColor = Forest),
+            ) { Text("Speichern") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen", color = Muted) } },
+        containerColor = Color.White,
+    )
+}
+
+@Composable
+private fun AmountField(
+    label: String,
+    value: String,
+    keyboardType: KeyboardType = KeyboardType.Decimal,
+    onValueChange: (String) -> Unit,
+) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label) },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         modifier = Modifier.fillMaxWidth(),
     )
 }
@@ -828,6 +1160,23 @@ private fun loadFixedCosts(context: Context): List<FixedCost> {
     }
 }
 
+private fun loadIrregularPayments(context: Context): List<IrregularPayment> {
+    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("irregularPayments", null)
+        ?: return emptyList()
+    val json = JSONArray(stored)
+    return List(json.length()) { index ->
+        val item = json.getJSONObject(index)
+        IrregularPayment(
+            id = item.getLong("id"),
+            month = item.optString("month", "unbekannt"),
+            paymentType = item.getString("paymentType"),
+            name = item.getString("name"),
+            amount = item.getDouble("amount"),
+            isPaid = item.optBoolean("isPaid", false),
+        )
+    }
+}
+
 private fun loadDashboardSettings(context: Context): DashboardSettings {
     val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE)
         .getString("dashboardSettings", null)
@@ -867,6 +1216,26 @@ private fun saveFixedCosts(context: Context, fixedCosts: List<FixedCost>) {
     context.getSharedPreferences("budget", Context.MODE_PRIVATE)
         .edit()
         .putString("fixedCosts", json.toString())
+        .apply()
+}
+
+private fun saveIrregularPayments(context: Context, payments: List<IrregularPayment>) {
+    val json = JSONArray()
+    payments.forEach { payment ->
+        json.put(
+            JSONObject().apply {
+                put("id", payment.id)
+                put("month", payment.month)
+                put("paymentType", payment.paymentType)
+                put("name", payment.name)
+                put("amount", payment.amount)
+                put("isPaid", payment.isPaid)
+            },
+        )
+    }
+    context.getSharedPreferences("budget", Context.MODE_PRIVATE)
+        .edit()
+        .putString("irregularPayments", json.toString())
         .apply()
 }
 

@@ -2,7 +2,9 @@ package com.budget2.app
 
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import java.util.Locale
 import kotlin.math.roundToInt
 
 internal val PaymentTypes = listOf("Überweisen", "Abbuchung", "Umbuchung")
@@ -15,6 +17,27 @@ internal data class FixedCost(
     val isPaid: Boolean,
     val dueDay: Int,
 )
+
+internal data class IrregularPayment(
+    val id: Long,
+    val month: String,
+    val paymentType: String,
+    val name: String,
+    val amount: Double,
+    val isPaid: Boolean,
+)
+
+internal fun isCurrentMonth(monthStr: String): Boolean {
+    val clean = monthStr.trim().lowercase()
+    if (clean == "unbekannt" || clean.isEmpty()) return false
+    val now = LocalDate.now()
+    val yearMonth = YearMonth.from(now)
+    val f1 = yearMonth.toString() // "2026-10"
+    val f2 = now.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.GERMANY)).lowercase()
+    val f3 = now.format(DateTimeFormatter.ofPattern("MMMM", Locale.GERMANY)).lowercase()
+    val f4 = now.format(DateTimeFormatter.ofPattern("MM.yyyy", Locale.GERMANY)).lowercase()
+    return clean == f1 || clean == f2 || clean == f3 || clean == f4
+}
 
 internal val DefaultFixedCosts = listOf(
     FixedCost(1, "Überweisen", "Loyer", 600.00, true, -27),
@@ -60,10 +83,12 @@ internal data class DashboardSummary(
     val balanceMinusBuffer: Double,
     val targetBalanceToday: Double,
     val targetBalanceTomorrow: Double,
+    val unknownMonthIrregularPayments: List<IrregularPayment> = emptyList(),
 )
 
 internal fun calculateDashboardSummary(
     fixedCosts: List<FixedCost>,
+    irregularPayments: List<IrregularPayment> = emptyList(),
     settings: DashboardSettings,
     today: LocalDate = LocalDate.now(),
 ): DashboardSummary {
@@ -77,9 +102,14 @@ internal fun calculateDashboardSummary(
     val daysRemaining = ChronoUnit.DAYS.between(today, cutoffDate).toInt()
     val safeDaysRemaining = daysRemaining.coerceAtLeast(1)
     val safeDaysTomorrow = (daysRemaining - 1).coerceAtLeast(1)
-    val paid = fixedCosts.filter { it.isPaid }.sumOf { it.amount }
-    val total = fixedCosts.sumOf { it.amount }
+    
+    val currentMonthIrregular = irregularPayments.filter { isCurrentMonth(it.month) }
+    val unknownMonthIrregular = irregularPayments.filter { it.month.trim().lowercase() == "unbekannt" }
+
+    val paid = fixedCosts.filter { it.isPaid }.sumOf { it.amount } + currentMonthIrregular.filter { it.isPaid }.sumOf { it.amount }
+    val total = fixedCosts.sumOf { it.amount } + currentMonthIrregular.sumOf { it.amount }
     val remaining = (total - paid).roundToInt().toDouble()
+    
     val dailyBudgetToday = ((settings.balance - remaining - settings.minimumBuffer) / safeDaysRemaining)
         .roundToInt().toDouble()
     val dailyBudgetTomorrow = ((settings.balance - remaining - settings.minimumBuffer) / safeDaysTomorrow)
@@ -101,6 +131,7 @@ internal fun calculateDashboardSummary(
         balanceMinusBuffer = settings.balance - bufferToday,
         targetBalanceToday = targetBalanceToday,
         targetBalanceTomorrow = targetBalanceToday - DAILY_TARGET - 5.0,
+        unknownMonthIrregularPayments = unknownMonthIrregular,
     )
 }
 
@@ -126,7 +157,20 @@ internal fun updateFixedCostStatus(
     if (cost.id == id) cost.copy(isPaid = isPaid) else cost
 }
 
+internal fun updateIrregularPaymentStatus(
+    payments: List<IrregularPayment>,
+    id: Long,
+    isPaid: Boolean,
+): List<IrregularPayment> = payments.map { payment ->
+    if (payment.id == id) payment.copy(isPaid = isPaid) else payment
+}
+
 internal fun setAllFixedCostsStatus(
     fixedCosts: List<FixedCost>,
     isPaid: Boolean,
 ): List<FixedCost> = fixedCosts.map { it.copy(isPaid = isPaid) }
+
+internal fun setAllIrregularPaymentsStatus(
+    payments: List<IrregularPayment>,
+    isPaid: Boolean,
+): List<IrregularPayment> = payments.map { it.copy(isPaid = isPaid) }
