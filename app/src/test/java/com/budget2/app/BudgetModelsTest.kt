@@ -72,6 +72,7 @@ class BudgetModelsTest {
             ),
             settings = DashboardSettings(balance = 1000.0, minimumBuffer = 100.0),
             today = LocalDate.of(2026, 10, 11),
+            viewingDate = LocalDate.of(2026, 10, 11),
         )
 
         assertEquals(LocalDate.of(2026, 10, 28), summary.cutoffDate)
@@ -88,23 +89,22 @@ class BudgetModelsTest {
     }
 
     @Test
-    fun calculateDashboardSummary_includesCurrentMonthIrregularPaymentsAndTracksUnknown() {
+    fun calculateDashboardSummary_includesCurrentMonthAndUnknownIrregularPayments() {
         val summary = calculateDashboardSummary(
             fixedCosts = listOf(
                 FixedCost(1, "Überweisen", "Miete", 600.0, true, -27),
             ),
             irregularPayments = listOf(
-                IrregularPayment(1, "Oktober 2026", "Abbuchung", "Sonderausgabe", 100.0, true),
+                IrregularPayment(1, "Oktober", "Abbuchung", "Sonderausgabe", 100.0, true),
                 IrregularPayment(2, "unbekannt", "Überweisen", "Bonus", 50.0, false),
             ),
             settings = DashboardSettings(balance = 1000.0, minimumBuffer = 100.0),
             today = LocalDate.of(2026, 10, 11),
+            viewingDate = LocalDate.of(2026, 10, 11),
         )
 
         assertEquals(700.0, summary.paidFixedCosts, 0.0)
-        assertEquals(0.0, summary.remainingFixedCosts, 0.0)
-        assertEquals(1, summary.unknownMonthIrregularPayments.size)
-        assertEquals("Bonus", summary.unknownMonthIrregularPayments[0].name)
+        assertEquals(50.0, summary.remainingFixedCosts, 0.0)
     }
 
     @Test
@@ -113,6 +113,7 @@ class BudgetModelsTest {
             fixedCosts = emptyList(),
             settings = DashboardSettings(),
             today = LocalDate.of(2025, 2, 20),
+            viewingDate = LocalDate.of(2025, 2, 20),
         )
 
         assertEquals(LocalDate.of(2025, 2, 27), summary.cutoffDate)

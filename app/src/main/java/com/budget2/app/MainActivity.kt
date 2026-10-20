@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
@@ -54,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -101,6 +103,8 @@ private fun FixedCostsApp(context: Context) {
     var irregularPayments by remember { mutableStateOf(loadIrregularPayments(context)) }
     var dashboardSettings by remember { mutableStateOf(loadDashboardSettings(context)) }
     var selectedTab by remember { mutableStateOf(0) }
+    var viewingMonthOffset by remember { mutableStateOf(0) } // 0 = current month, 1 = next month
+
     var showEditor by remember { mutableStateOf(false) }
     var editingCost by remember { mutableStateOf<FixedCost?>(null) }
     var deletingCost by remember { mutableStateOf<FixedCost?>(null) }
@@ -111,7 +115,8 @@ private fun FixedCostsApp(context: Context) {
     var deletingIrregular by remember { mutableStateOf<IrregularPayment?>(null) }
     var confirmIrregularReset by remember { mutableStateOf(false) }
 
-    val currentMonth = LocalDate.now().format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.GERMANY))
+    val viewingDate = LocalDate.now().plusMonths(viewingMonthOffset.toLong())
+    val viewingMonthName = viewingDate.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.GERMANY))
 
     fun updateCosts(updated: List<FixedCost>) {
         fixedCosts = updated
@@ -127,17 +132,34 @@ private fun FixedCostsApp(context: Context) {
         containerColor = Paper,
         topBar = {
             Column {
-                Column(
-                    Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 20.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                Row(
+                    Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text("FIXKOSTEN", fontSize = 11.sp, color = Muted, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                    Text(
-                        "${currentMonth.replaceFirstChar { it.titlecase(Locale.GERMANY) }} · wiederkehrende Zahlungen",
-                        fontSize = 16.sp,
-                        color = Ink,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_app_logo),
+                            contentDescription = "App Logo",
+                            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)),
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("FIXKOSTEN", fontSize = 11.sp, color = Muted, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                            Text(
+                                viewingMonthName.replaceFirstChar { it.titlecase(Locale.GERMANY) },
+                                fontSize = 15.sp,
+                                color = Ink,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                    TextButton(
+                        onClick = { viewingMonthOffset = if (viewingMonthOffset == 0) 1 else 0 },
+                        colors = ButtonDefaults.textButtonColors(containerColor = Paper, contentColor = Ink),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text(if (viewingMonthOffset == 0) "Nächster Monat ➔" else "◀ Aktueller Monat", fontSize = 11.sp)
+                    }
                 }
                 TabRow(selectedTabIndex = selectedTab, containerColor = Color.White) {
                     listOf("Fixkosten", "Unregelmäßig", "Dashboard", "Settings").forEachIndexed { index, title ->
@@ -155,6 +177,7 @@ private fun FixedCostsApp(context: Context) {
             0 -> FixedCostsTab(
                 fixedCosts = fixedCosts,
                 irregularPayments = irregularPayments,
+                viewingDate = viewingDate,
                 modifier = Modifier.padding(padding),
                 onToggleFixedCost = { cost, isPaid ->
                     updateCosts(updateFixedCostStatus(fixedCosts, cost.id, isPaid))
@@ -186,6 +209,7 @@ private fun FixedCostsApp(context: Context) {
                 fixedCosts = fixedCosts,
                 irregularPayments = irregularPayments,
                 settings = dashboardSettings,
+                viewingDate = viewingDate,
                 modifier = Modifier.padding(padding),
             )
             3 -> SettingsTab(
@@ -353,13 +377,14 @@ private fun DashboardTab(
     fixedCosts: List<FixedCost>,
     irregularPayments: List<IrregularPayment>,
     settings: DashboardSettings,
+    viewingDate: LocalDate,
     modifier: Modifier = Modifier,
 ) {
     val totals = paymentTypeTotals(fixedCosts)
-    val summary = calculateDashboardSummary(fixedCosts, irregularPayments, settings)
-    val currentMonthIrregular = irregularPayments.filter { isCurrentMonth(it.month) }
-    val total = fixedCosts.sumOf { it.amount } + currentMonthIrregular.sumOf { it.amount }
-    val paid = fixedCosts.filter { it.isPaid }.sumOf { it.amount } + currentMonthIrregular.filter { it.isPaid }.sumOf { it.amount }
+    val summary = calculateDashboardSummary(fixedCosts, irregularPayments, settings, today = LocalDate.now(), viewingDate = viewingDate)
+    val activeIrregular = irregularPayments.filter { isActiveMonth(it.month, viewingDate) }
+    val total = fixedCosts.sumOf { it.amount } + activeIrregular.sumOf { it.amount }
+    val paid = fixedCosts.filter { it.isPaid }.sumOf { it.amount } + activeIrregular.filter { it.isPaid }.sumOf { it.amount }
     val unpaid = total - paid
     val maxPaymentTypeTotal = totals.maxOfOrNull { it.total } ?: 0.0
 
@@ -371,7 +396,7 @@ private fun DashboardTab(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Dashboard", fontSize = 20.sp, color = Ink, fontWeight = FontWeight.SemiBold)
-                Text("Kostenübersicht deiner monatlichen Fixkosten & Zahlungen", fontSize = 13.sp, color = Muted)
+                Text("Kostenübersicht für ${viewingDate.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.GERMANY))}", fontSize = 13.sp, color = Muted)
             }
         }
         item {
@@ -388,31 +413,6 @@ private fun DashboardTab(
                     modifier = Modifier.weight(1f),
                     tint = UnpaidTint,
                 )
-            }
-        }
-        if (summary.unknownMonthIrregularPayments.isNotEmpty()) {
-            item {
-                Card(
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                ) {
-                    Column(
-                        Modifier.fillMaxWidth().padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Text("Unregelmäßige Zahlungen (Monat: unbekannt)", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
-                        Text("Diese Zahlungen haben keinen festen Monat und sind im Dashboard gelistet:", fontSize = 12.sp, color = Muted)
-                        summary.unknownMonthIrregularPayments.forEach { payment ->
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(payment.name, fontSize = 13.sp, color = Ink, fontWeight = FontWeight.SemiBold)
-                                    Text("${payment.paymentType} · ${money(payment.amount)}", fontSize = 12.sp, color = Muted)
-                                }
-                                Text(if (payment.isPaid) "bezahlt" else "offen", fontSize = 11.sp, color = if (payment.isPaid) PaidTint else UnpaidTint, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    }
-                }
             }
         }
         item {
@@ -611,16 +611,17 @@ private fun DashboardLegend(color: Color, label: String) {
 private fun FixedCostsTab(
     fixedCosts: List<FixedCost>,
     irregularPayments: List<IrregularPayment>,
+    viewingDate: LocalDate,
     modifier: Modifier = Modifier,
     onToggleFixedCost: (FixedCost, Boolean) -> Unit,
     onToggleIrregular: (IrregularPayment, Boolean) -> Unit,
     onResetStatuses: () -> Unit,
     onGoToSettings: () -> Unit,
 ) {
-    val currentMonthIrregular = irregularPayments.filter { isCurrentMonth(it.month) }
-    val totalCount = fixedCosts.size + currentMonthIrregular.size
-    val unpaidCount = fixedCosts.count { !it.isPaid } + currentMonthIrregular.count { !it.isPaid }
-    val hasPaid = fixedCosts.any { it.isPaid } || currentMonthIrregular.any { it.isPaid }
+    val activeIrregular = irregularPayments.filter { isActiveMonth(it.month, viewingDate) }
+    val totalCount = fixedCosts.size + activeIrregular.size
+    val unpaidCount = fixedCosts.count { !it.isPaid } + activeIrregular.count { !it.isPaid }
+    val hasPaid = fixedCosts.any { it.isPaid } || activeIrregular.any { it.isPaid }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -630,7 +631,7 @@ private fun FixedCostsTab(
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("$totalCount Zwecke (inkl. Monats-Zahlungen)", fontSize = 17.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                    Text("$totalCount Zwecke (für ${viewingDate.format(DateTimeFormatter.ofPattern("MMMM", Locale.GERMANY))})", fontSize = 17.sp, color = Ink, fontWeight = FontWeight.SemiBold)
                     Text("$unpaidCount unbezahlt", fontSize = 13.sp, color = if (unpaidCount > 0) UnpaidTint else PaidTint)
                 }
                 TextButton(onClick = onResetStatuses, enabled = hasPaid) {
@@ -639,7 +640,7 @@ private fun FixedCostsTab(
             }
         }
         item { FixedCostTableHeader() }
-        if (fixedCosts.isEmpty() && currentMonthIrregular.isEmpty()) {
+        if (fixedCosts.isEmpty() && activeIrregular.isEmpty()) {
             item {
                 Card(
                     shape = RoundedCornerShape(18.dp),
@@ -659,7 +660,7 @@ private fun FixedCostsTab(
             items(fixedCosts, key = { "fc_${it.id}" }) { cost ->
                 FixedCostTableRow(cost, onToggleFixedCost)
             }
-            items(currentMonthIrregular, key = { "irr_${it.id}" }) { payment ->
+            items(activeIrregular, key = { "irr_${it.id}" }) { payment ->
                 IrregularPaymentTableRowInFixkosten(payment, onToggleIrregular)
             }
         }
@@ -1046,7 +1047,8 @@ private fun IrregularPaymentEditorDialog(
     onDismiss: () -> Unit,
     onSave: (String, String, String, Double) -> Unit,
 ) {
-    var month by remember { mutableStateOf(initial?.month ?: LocalDate.now().format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.GERMANY))) }
+    val defaultMonth = LocalDate.now().format(DateTimeFormatter.ofPattern("MMMM", Locale.GERMANY))
+    var month by remember { mutableStateOf(initial?.month ?: defaultMonth) }
     var name by remember { mutableStateOf(initial?.name.orEmpty()) }
     var amount by remember { mutableStateOf(initial?.amount?.inputValue().orEmpty()) }
     var paymentType by remember { mutableStateOf(initial?.paymentType ?: PaymentTypes.first()) }
@@ -1059,14 +1061,7 @@ private fun IrregularPaymentEditorDialog(
         title = { Text(if (initial == null) "Unregelmäßige Zahlung hinzufügen" else "Unregelmäßige Zahlung bearbeiten", fontWeight = FontWeight.SemiBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = month,
-                    onValueChange = { month = it },
-                    label = { Text("Monat (z.B. aktueller Monat oder „unbekannt“)") },
-                    supportingText = { Text("Tippe z.B. „unbekannt“ oder den Monatsnamen.") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                DropdownField("Monat", month, MonthOptions) { month = it }
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
