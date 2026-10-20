@@ -29,12 +29,26 @@ internal data class IrregularPayment(
     val isPaid: Boolean,
 )
 
+internal data class IncomeReceipt(
+    val id: Long,
+    val targetMonth: String, // e.g. "Oktober", "November", etc.
+    val name: String,
+    val amount: Double,
+    val date: LocalDate,
+)
+
 internal fun isActiveMonth(monthStr: String, viewingDate: LocalDate = LocalDate.now()): Boolean {
     val clean = monthStr.trim().lowercase()
     if (clean == "unbekannt" || clean.isEmpty()) return true
     val viewingMonthName = viewingDate.format(DateTimeFormatter.ofPattern("MMMM", Locale.GERMANY)).lowercase()
     val viewingMonthNumber = viewingDate.monthValue.toString()
     return clean == viewingMonthName || clean == viewingMonthNumber
+}
+
+internal fun matchesMonth(targetMonth: String, viewingDate: LocalDate): Boolean {
+    val clean = targetMonth.trim().lowercase()
+    val viewingMonthName = viewingDate.format(DateTimeFormatter.ofPattern("MMMM", Locale.GERMANY)).lowercase()
+    return clean == viewingMonthName
 }
 
 internal val DefaultFixedCosts = listOf(
@@ -89,6 +103,7 @@ internal fun calculateDashboardSummary(
     paidFixedCostIds: Set<Long> = emptySet(),
     irregularPayments: List<IrregularPayment> = emptyList(),
     paidUnknownPaymentIds: Set<Long> = emptySet(),
+    incomeReceipts: List<IncomeReceipt> = emptyList(),
     settings: DashboardSettings,
     today: LocalDate = LocalDate.now(),
     viewingDate: LocalDate = LocalDate.now(),
@@ -105,23 +120,31 @@ internal fun calculateDashboardSummary(
     val safeDaysTomorrow = (daysRemaining - 1).coerceAtLeast(1)
     
     val activeIrregular = irregularPayments.filter { isActiveMonth(it.month, viewingDate) }
+    val budgetIrregular = activeIrregular.filter { payment ->
+        val clean = payment.month.trim().lowercase()
+        if (clean == "unbekannt") YearMonth.from(viewingDate) == YearMonth.from(today)
+        else isActiveMonth(payment.month, viewingDate)
+    }
 
     val paid = fixedCosts.filter { it.id in paidFixedCostIds }.sumOf { it.amount } +
-        activeIrregular.filter { 
+        budgetIrregular.filter { 
             val clean = it.month.trim().lowercase()
             if (clean == "unbekannt") it.id in paidUnknownPaymentIds else it.isPaid
         }.sumOf { it.amount }
 
-    val total = fixedCosts.sumOf { it.amount } + activeIrregular.sumOf { it.amount }
+    val total = fixedCosts.sumOf { it.amount } + budgetIrregular.sumOf { it.amount }
     val remaining = (total - paid).roundToInt().toDouble()
+
+    val viewingIncome = incomeReceipts.filter { matchesMonth(it.targetMonth, viewingDate) }.sumOf { it.amount }
+    val effectiveBalance = settings.balance + viewingIncome
     
-    val dailyBudgetToday = ((settings.balance - remaining - settings.minimumBuffer) / safeDaysRemaining)
+    val dailyBudgetToday = ((effectiveBalance - remaining - settings.minimumBuffer) / safeDaysRemaining)
         .roundToInt().toDouble()
-    val dailyBudgetTomorrow = ((settings.balance - remaining - settings.minimumBuffer) / safeDaysTomorrow)
+    val dailyBudgetTomorrow = ((effectiveBalance - remaining - settings.minimumBuffer) / safeDaysTomorrow)
         .roundToInt().toDouble()
     val daysForTarget = daysRemaining.coerceAtLeast(0)
-    val bufferToday = settings.balance - (DAILY_TARGET * daysForTarget + remaining)
-    val bufferTomorrow = settings.balance - (DAILY_TARGET * (daysForTarget - 1).coerceAtLeast(0) + remaining)
+    val bufferToday = effectiveBalance - (DAILY_TARGET * daysForTarget + remaining)
+    val bufferTomorrow = effectiveBalance - (DAILY_TARGET * (daysForTarget - 1).coerceAtLeast(0) + remaining)
     val targetBalanceToday = DAILY_TARGET * daysForTarget + settings.minimumBuffer + remaining
 
     return DashboardSummary(
@@ -133,7 +156,7 @@ internal fun calculateDashboardSummary(
         dailyBudgetTomorrow = dailyBudgetTomorrow,
         bufferToday = bufferToday,
         bufferTomorrow = bufferTomorrow,
-        balanceMinusBuffer = settings.balance - bufferToday,
+        balanceMinusBuffer = effectiveBalance - bufferToday,
         targetBalanceToday = targetBalanceToday,
         targetBalanceTomorrow = targetBalanceToday - DAILY_TARGET - 5.0,
     )

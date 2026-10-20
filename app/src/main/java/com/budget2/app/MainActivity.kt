@@ -104,6 +104,7 @@ private fun FixedCostsApp(context: Context) {
     var dashboardSettings by remember { mutableStateOf(loadDashboardSettings(context)) }
     var paidFixedCostsMap by remember { mutableStateOf(loadPaidFixedCostsMap(context)) }
     var paidUnknownPaymentsMap by remember { mutableStateOf(loadPaidUnknownPaymentsMap(context)) }
+    var paidSalaryMap by remember { mutableStateOf(loadPaidSalaryMap(context)) }
 
     var selectedTab by remember { mutableStateOf(0) }
     var viewingMonthOffset by remember { mutableStateOf(0) } // 0 = current month, 1 = next month
@@ -120,6 +121,8 @@ private fun FixedCostsApp(context: Context) {
 
     val viewingDate = LocalDate.now().plusMonths(viewingMonthOffset.toLong())
     val viewingMonthName = viewingDate.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.GERMANY))
+    val monthKey = getMonthKey(viewingDate)
+    val salaryReceived = paidSalaryMap[monthKey] == true
 
     fun updateCosts(updated: List<FixedCost>) {
         fixedCosts = updated
@@ -165,7 +168,7 @@ private fun FixedCostsApp(context: Context) {
                     }
                 }
                 TabRow(selectedTabIndex = selectedTab, containerColor = Color.White) {
-                    listOf("Fixkosten", "Unregelmäßig", "Dashboard", "Settings").forEachIndexed { index, title ->
+                    listOf("Dashboard", "Fixkosten", "Unregelmäßig", "Settings").forEachIndexed { index, title ->
                         Tab(
                             selected = selectedTab == index,
                             onClick = { selectedTab = index },
@@ -177,7 +180,20 @@ private fun FixedCostsApp(context: Context) {
         },
     ) { padding ->
         when (selectedTab) {
-            0 -> FixedCostsTab(
+            0 -> DashboardTab(
+                fixedCosts = fixedCosts,
+                irregularPayments = irregularPayments,
+                settings = dashboardSettings,
+                viewingDate = viewingDate,
+                paidFixedCostsMap = paidFixedCostsMap,
+                paidUnknownPaymentsMap = paidUnknownPaymentsMap,
+                salaryReceived = salaryReceived,
+                onToggleSalary = { received ->
+                    paidSalaryMap = toggleSalaryReceived(context, viewingDate, received)
+                },
+                modifier = Modifier.padding(padding),
+            )
+            1 -> FixedCostsTab(
                 fixedCosts = fixedCosts,
                 irregularPayments = irregularPayments,
                 viewingDate = viewingDate,
@@ -198,7 +214,7 @@ private fun FixedCostsApp(context: Context) {
                 onResetStatuses = { confirmReset = true },
                 onGoToSettings = { selectedTab = 3 },
             )
-            1 -> IrregularPaymentsTab(
+            2 -> IrregularPaymentsTab(
                 irregularPayments = irregularPayments,
                 viewingDate = viewingDate,
                 paidUnknownPaymentsMap = paidUnknownPaymentsMap,
@@ -221,15 +237,6 @@ private fun FixedCostsApp(context: Context) {
                     showIrregularEditor = true
                 },
                 onDelete = { deletingIrregular = it },
-            )
-            2 -> DashboardTab(
-                fixedCosts = fixedCosts,
-                irregularPayments = irregularPayments,
-                settings = dashboardSettings,
-                viewingDate = viewingDate,
-                paidFixedCostsMap = paidFixedCostsMap,
-                paidUnknownPaymentsMap = paidUnknownPaymentsMap,
-                modifier = Modifier.padding(padding),
             )
             3 -> SettingsTab(
                 fixedCosts = fixedCosts,
@@ -426,6 +433,8 @@ private fun DashboardTab(
     viewingDate: LocalDate,
     paidFixedCostsMap: Map<String, Set<Long>>,
     paidUnknownPaymentsMap: Map<String, Set<Long>>,
+    salaryReceived: Boolean,
+    onToggleSalary: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val monthKey = getMonthKey(viewingDate)
@@ -463,6 +472,26 @@ private fun DashboardTab(
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Dashboard", fontSize = 20.sp, color = Ink, fontWeight = FontWeight.SemiBold)
                 Text("Kostenübersicht für ${viewingDate.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.GERMANY))}", fontSize = 13.sp, color = Muted)
+            }
+        }
+        item {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Gehaltseingang", fontSize = 15.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                        Text("Gehalt für ${viewingDate.format(DateTimeFormatter.ofPattern("MMMM", Locale.GERMANY))} erhalten?", fontSize = 12.sp, color = Muted)
+                    }
+                    Switch(
+                        checked = salaryReceived,
+                        onCheckedChange = onToggleSalary,
+                    )
+                }
             }
         }
         item {
@@ -529,6 +558,7 @@ private fun DashboardTab(
                 ) {
                     Text("Kontostand & Puffer", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
                     DashboardMetric("Kontostand", money(settings.balance))
+                    DashboardMetric("Gehalt erhalten", if (salaryReceived) "Ja" else "Nein", if (salaryReceived) PaidTint else UnpaidTint)
                     DashboardMetric("Puffer heute berechnet", money(summary.bufferToday))
                     DashboardMetric("Puffer morgen berechnet", money(summary.bufferTomorrow))
                     DashboardMetric("Kontostand minus Puffer", money(summary.balanceMinusBuffer))
@@ -628,14 +658,14 @@ private fun PaymentTypeBar(total: PaymentTypeTotal, maxTotal: Double) {
         ) {
             val fraction = if (maxTotal > 0) (total.total / maxTotal).toFloat().coerceIn(0f, 1f) else 0f
             if (fraction > 0f) {
-                Row(
+                Box(
                     Modifier.fillMaxWidth(fraction).height(14.dp).clip(RoundedCornerShape(99.dp)),
+                    contentAlignment = Alignment.CenterStart,
                 ) {
-                    if (total.paid > 0) {
-                        Box(Modifier.weight(total.paid.toFloat()).fillMaxSize().background(PaidTint))
-                    }
-                    if (total.unpaid > 0) {
-                        Box(Modifier.weight(total.unpaid.toFloat()).fillMaxSize().background(UnpaidTint))
+                    Box(Modifier.fillMaxSize().background(UnpaidTint))
+                    val paidFraction = if (total.total > 0) (total.paid / total.total).toFloat().coerceIn(0f, 1f) else 0f
+                    if (paidFraction > 0f) {
+                        Box(Modifier.fillMaxWidth(paidFraction).fillMaxSize().background(PaidTint))
                     }
                 }
             }
@@ -971,7 +1001,7 @@ private fun SettingsTab(
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
             DashboardSettingsCard(dashboardSettings, onSaveDashboardSettings)
@@ -1298,6 +1328,28 @@ private fun savePaidUnknownPaymentsMap(context: Context, map: Map<String, Set<Lo
         .apply()
 }
 
+private fun loadPaidSalaryMap(context: Context): Map<String, Boolean> {
+    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("paidSalaryMap", null)
+        ?: return emptyMap()
+    val map = mutableMapOf<String, Boolean>()
+    val jsonObj = JSONObject(stored)
+    jsonObj.keys().forEach { monthKey ->
+        map[monthKey] = jsonObj.getBoolean(monthKey)
+    }
+    return map
+}
+
+private fun savePaidSalaryMap(context: Context, map: Map<String, Boolean>) {
+    val jsonObj = JSONObject()
+    map.forEach { (monthKey, received) ->
+        jsonObj.put(monthKey, received)
+    }
+    context.getSharedPreferences("budget", Context.MODE_PRIVATE)
+        .edit()
+        .putString("paidSalaryMap", jsonObj.toString())
+        .apply()
+}
+
 private fun toggleFixedCostPaid(context: Context, costId: Long, viewingDate: LocalDate, isPaid: Boolean): Map<String, Set<Long>> {
     val map = loadPaidFixedCostsMap(context).toMutableMap()
     val monthKey = getMonthKey(viewingDate)
@@ -1323,6 +1375,14 @@ private fun toggleUnknownPaymentPaid(context: Context, paymentId: Long, viewingD
     if (isPaid) set.add(paymentId) else set.remove(paymentId)
     map[monthKey] = set
     savePaidUnknownPaymentsMap(context, map)
+    return map
+}
+
+private fun toggleSalaryReceived(context: Context, viewingDate: LocalDate, received: Boolean): Map<String, Boolean> {
+    val map = loadPaidSalaryMap(context).toMutableMap()
+    val monthKey = getMonthKey(viewingDate)
+    map[monthKey] = received
+    savePaidSalaryMap(context, map)
     return map
 }
 
