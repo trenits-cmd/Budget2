@@ -70,6 +70,7 @@ class BudgetModelsTest {
                 FixedCost(1, "Überweisen", "Miete", 600.0, true, -27),
                 FixedCost(2, "Abbuchung", "Abo", 24.99, false, 10),
             ),
+            paidFixedCostIds = setOf(1L),
             settings = DashboardSettings(balance = 1000.0, minimumBuffer = 100.0),
             today = LocalDate.of(2026, 10, 11),
             viewingDate = LocalDate.of(2026, 10, 11),
@@ -94,6 +95,7 @@ class BudgetModelsTest {
             fixedCosts = listOf(
                 FixedCost(1, "Überweisen", "Miete", 600.0, true, -27),
             ),
+            paidFixedCostIds = setOf(1L),
             irregularPayments = listOf(
                 IrregularPayment(1, "Oktober", "Abbuchung", "Sonderausgabe", 100.0, true),
                 IrregularPayment(2, "unbekannt", "Überweisen", "Bonus", 50.0, false),

@@ -102,6 +102,9 @@ private fun FixedCostsApp(context: Context) {
     var fixedCosts by remember { mutableStateOf(loadFixedCosts(context)) }
     var irregularPayments by remember { mutableStateOf(loadIrregularPayments(context)) }
     var dashboardSettings by remember { mutableStateOf(loadDashboardSettings(context)) }
+    var paidFixedCostsMap by remember { mutableStateOf(loadPaidFixedCostsMap(context)) }
+    var paidUnknownPaymentsMap by remember { mutableStateOf(loadPaidUnknownPaymentsMap(context)) }
+
     var selectedTab by remember { mutableStateOf(0) }
     var viewingMonthOffset by remember { mutableStateOf(0) } // 0 = current month, 1 = next month
 
@@ -178,21 +181,35 @@ private fun FixedCostsApp(context: Context) {
                 fixedCosts = fixedCosts,
                 irregularPayments = irregularPayments,
                 viewingDate = viewingDate,
+                paidFixedCostsMap = paidFixedCostsMap,
+                paidUnknownPaymentsMap = paidUnknownPaymentsMap,
                 modifier = Modifier.padding(padding),
                 onToggleFixedCost = { cost, isPaid ->
-                    updateCosts(updateFixedCostStatus(fixedCosts, cost.id, isPaid))
+                    paidFixedCostsMap = toggleFixedCostPaid(context, cost.id, viewingDate, isPaid)
                 },
                 onToggleIrregular = { payment, isPaid ->
-                    updateIrregular(updateIrregularPaymentStatus(irregularPayments, payment.id, isPaid))
+                    val cleanMonth = payment.month.trim().lowercase()
+                    if (cleanMonth == "unbekannt") {
+                        paidUnknownPaymentsMap = toggleUnknownPaymentPaid(context, payment.id, viewingDate, isPaid)
+                    } else {
+                        updateIrregular(updateIrregularPaymentStatus(irregularPayments, payment.id, isPaid))
+                    }
                 },
                 onResetStatuses = { confirmReset = true },
                 onGoToSettings = { selectedTab = 3 },
             )
             1 -> IrregularPaymentsTab(
                 irregularPayments = irregularPayments,
+                viewingDate = viewingDate,
+                paidUnknownPaymentsMap = paidUnknownPaymentsMap,
                 modifier = Modifier.padding(padding),
                 onToggleStatus = { payment, isPaid ->
-                    updateIrregular(updateIrregularPaymentStatus(irregularPayments, payment.id, isPaid))
+                    val cleanMonth = payment.month.trim().lowercase()
+                    if (cleanMonth == "unbekannt") {
+                        paidUnknownPaymentsMap = toggleUnknownPaymentPaid(context, payment.id, viewingDate, isPaid)
+                    } else {
+                        updateIrregular(updateIrregularPaymentStatus(irregularPayments, payment.id, isPaid))
+                    }
                 },
                 onResetStatuses = { confirmIrregularReset = true },
                 onAdd = {
@@ -210,6 +227,8 @@ private fun FixedCostsApp(context: Context) {
                 irregularPayments = irregularPayments,
                 settings = dashboardSettings,
                 viewingDate = viewingDate,
+                paidFixedCostsMap = paidFixedCostsMap,
+                paidUnknownPaymentsMap = paidUnknownPaymentsMap,
                 modifier = Modifier.padding(padding),
             )
             3 -> SettingsTab(
@@ -332,12 +351,26 @@ private fun FixedCostsApp(context: Context) {
     if (confirmReset) {
         AlertDialog(
             onDismissRequest = { confirmReset = false },
-            title = { Text("Alle als unbezahlt markieren?") },
-            text = { Text("Der Status aller Fixkosten wird auf „unbezahlt“ gesetzt.") },
+            title = { Text("Alle für diesen Monat als unbezahlt markieren?") },
+            text = { Text("Der Status aller Fixkosten und Zahlungen für ${viewingMonthName} wird zurückgesetzt.") },
             confirmButton = {
                 Button(
                     onClick = {
-                        updateCosts(setAllFixedCostsStatus(fixedCosts, isPaid = false))
+                        paidFixedCostsMap = resetFixedCostsPaid(context, viewingDate)
+                        val monthKey = getMonthKey(viewingDate)
+                        val unknownMap = paidUnknownPaymentsMap.toMutableMap()
+                        unknownMap[monthKey] = emptySet()
+                        paidUnknownPaymentsMap = unknownMap
+                        savePaidUnknownPaymentsMap(context, unknownMap)
+
+                        val updatedIrregular = irregularPayments.map { payment ->
+                            if (isActiveMonth(payment.month, viewingDate) && payment.month.trim().lowercase() != "unbekannt") {
+                                payment.copy(isPaid = false)
+                            } else {
+                                payment
+                            }
+                        }
+                        updateIrregular(updatedIrregular)
                         confirmReset = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Forest),
@@ -354,11 +387,24 @@ private fun FixedCostsApp(context: Context) {
         AlertDialog(
             onDismissRequest = { confirmIrregularReset = false },
             title = { Text("Alle unregelmäßigen als unbezahlt markieren?") },
-            text = { Text("Der Status aller unregelmäßigen Zahlungen wird auf „unbezahlt“ gesetzt.") },
+            text = { Text("Der Status aller unregelmäßigen Zahlungen für ${viewingMonthName} wird zurückgesetzt.") },
             confirmButton = {
                 Button(
                     onClick = {
-                        updateIrregular(setAllIrregularPaymentsStatus(irregularPayments, isPaid = false))
+                        val monthKey = getMonthKey(viewingDate)
+                        val unknownMap = paidUnknownPaymentsMap.toMutableMap()
+                        unknownMap[monthKey] = emptySet()
+                        paidUnknownPaymentsMap = unknownMap
+                        savePaidUnknownPaymentsMap(context, unknownMap)
+
+                        val updatedIrregular = irregularPayments.map { payment ->
+                            if (isActiveMonth(payment.month, viewingDate) && payment.month.trim().lowercase() != "unbekannt") {
+                                payment.copy(isPaid = false)
+                            } else {
+                                payment
+                            }
+                        }
+                        updateIrregular(updatedIrregular)
                         confirmIrregularReset = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Forest),
@@ -378,13 +424,33 @@ private fun DashboardTab(
     irregularPayments: List<IrregularPayment>,
     settings: DashboardSettings,
     viewingDate: LocalDate,
+    paidFixedCostsMap: Map<String, Set<Long>>,
+    paidUnknownPaymentsMap: Map<String, Set<Long>>,
     modifier: Modifier = Modifier,
 ) {
+    val monthKey = getMonthKey(viewingDate)
+    val paidFixedIds = paidFixedCostsMap[monthKey] ?: emptySet()
+    val paidUnknownIds = paidUnknownPaymentsMap[monthKey] ?: emptySet()
+
     val totals = paymentTypeTotals(fixedCosts)
-    val summary = calculateDashboardSummary(fixedCosts, irregularPayments, settings, today = LocalDate.now(), viewingDate = viewingDate)
+    val summary = calculateDashboardSummary(
+        fixedCosts = fixedCosts,
+        paidFixedCostIds = paidFixedIds,
+        irregularPayments = irregularPayments,
+        paidUnknownPaymentIds = paidUnknownIds,
+        settings = settings,
+        today = LocalDate.now(),
+        viewingDate = viewingDate,
+    )
     val activeIrregular = irregularPayments.filter { isActiveMonth(it.month, viewingDate) }
     val total = fixedCosts.sumOf { it.amount } + activeIrregular.sumOf { it.amount }
-    val paid = fixedCosts.filter { it.isPaid }.sumOf { it.amount } + activeIrregular.filter { it.isPaid }.sumOf { it.amount }
+    
+    val paid = fixedCosts.filter { it.id in paidFixedIds }.sumOf { it.amount } +
+        activeIrregular.filter { payment ->
+            val clean = payment.month.trim().lowercase()
+            if (clean == "unbekannt") payment.id in paidUnknownIds else payment.isPaid
+        }.sumOf { it.amount }
+
     val unpaid = total - paid
     val maxPaymentTypeTotal = totals.maxOfOrNull { it.total } ?: 0.0
 
@@ -612,16 +678,28 @@ private fun FixedCostsTab(
     fixedCosts: List<FixedCost>,
     irregularPayments: List<IrregularPayment>,
     viewingDate: LocalDate,
+    paidFixedCostsMap: Map<String, Set<Long>>,
+    paidUnknownPaymentsMap: Map<String, Set<Long>>,
     modifier: Modifier = Modifier,
     onToggleFixedCost: (FixedCost, Boolean) -> Unit,
     onToggleIrregular: (IrregularPayment, Boolean) -> Unit,
     onResetStatuses: () -> Unit,
     onGoToSettings: () -> Unit,
 ) {
+    val monthKey = getMonthKey(viewingDate)
+    val paidFixedIds = paidFixedCostsMap[monthKey] ?: emptySet()
+    val paidUnknownIds = paidUnknownPaymentsMap[monthKey] ?: emptySet()
+
     val activeIrregular = irregularPayments.filter { isActiveMonth(it.month, viewingDate) }
     val totalCount = fixedCosts.size + activeIrregular.size
-    val unpaidCount = fixedCosts.count { !it.isPaid } + activeIrregular.count { !it.isPaid }
-    val hasPaid = fixedCosts.any { it.isPaid } || activeIrregular.any { it.isPaid }
+
+    val paidFixedCount = fixedCosts.count { it.id in paidFixedIds }
+    val paidIrregularCount = activeIrregular.count { payment ->
+        val clean = payment.month.trim().lowercase()
+        if (clean == "unbekannt") payment.id in paidUnknownIds else payment.isPaid
+    }
+    val unpaidCount = totalCount - (paidFixedCount + paidIrregularCount)
+    val hasPaid = (paidFixedCount + paidIrregularCount) > 0
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -658,10 +736,13 @@ private fun FixedCostsTab(
             }
         } else {
             items(fixedCosts, key = { "fc_${it.id}" }) { cost ->
-                FixedCostTableRow(cost, onToggleFixedCost)
+                val isPaid = cost.id in paidFixedIds
+                FixedCostTableRow(cost, isPaid, onToggleFixedCost)
             }
             items(activeIrregular, key = { "irr_${it.id}" }) { payment ->
-                IrregularPaymentTableRowInFixkosten(payment, onToggleIrregular)
+                val clean = payment.month.trim().lowercase()
+                val isPaid = if (clean == "unbekannt") payment.id in paidUnknownIds else payment.isPaid
+                IrregularPaymentTableRowInFixkosten(payment, isPaid, onToggleIrregular)
             }
         }
     }
@@ -670,6 +751,8 @@ private fun FixedCostsTab(
 @Composable
 private fun IrregularPaymentsTab(
     irregularPayments: List<IrregularPayment>,
+    viewingDate: LocalDate,
+    paidUnknownPaymentsMap: Map<String, Set<Long>>,
     modifier: Modifier = Modifier,
     onToggleStatus: (IrregularPayment, Boolean) -> Unit,
     onResetStatuses: () -> Unit,
@@ -677,7 +760,19 @@ private fun IrregularPaymentsTab(
     onEdit: (IrregularPayment) -> Unit,
     onDelete: (IrregularPayment) -> Unit,
 ) {
-    val unpaidCount = irregularPayments.count { !it.isPaid }
+    val monthKey = getMonthKey(viewingDate)
+    val paidUnknownIds = paidUnknownPaymentsMap[monthKey] ?: emptySet()
+
+    val unpaidCount = irregularPayments.count { payment ->
+        val clean = payment.month.trim().lowercase()
+        val isPaid = if (clean == "unbekannt") payment.id in paidUnknownIds else payment.isPaid
+        !isPaid
+    }
+    val hasPaid = irregularPayments.any { payment ->
+        val clean = payment.month.trim().lowercase()
+        if (clean == "unbekannt") payment.id in paidUnknownIds else payment.isPaid
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 24.dp),
@@ -687,10 +782,10 @@ private fun IrregularPaymentsTab(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("${irregularPayments.size} unregelmäßige Zahlungen", fontSize = 17.sp, color = Ink, fontWeight = FontWeight.SemiBold)
-                    Text("$unpaidCount unbezahlt", fontSize = 13.sp, color = if (unpaidCount > 0) UnpaidTint else PaidTint)
+                    Text("$unpaidCount unbezahlt (in ${viewingDate.format(DateTimeFormatter.ofPattern("MMMM", Locale.GERMANY))})", fontSize = 13.sp, color = if (unpaidCount > 0) UnpaidTint else PaidTint)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onResetStatuses, enabled = irregularPayments.any { it.isPaid }) {
+                    TextButton(onClick = onResetStatuses, enabled = hasPaid) {
                         Text("Alle unbezahlt", fontSize = 12.sp)
                     }
                     Button(
@@ -735,7 +830,9 @@ private fun IrregularPaymentsTab(
             }
         } else {
             items(irregularPayments.sortedBy { it.month }, key = { it.id }) { payment ->
-                IrregularPaymentTableRow(payment, onToggleStatus, onEdit, onDelete)
+                val clean = payment.month.trim().lowercase()
+                val isPaid = if (clean == "unbekannt") payment.id in paidUnknownIds else payment.isPaid
+                IrregularPaymentTableRow(payment, isPaid, onToggleStatus, onEdit, onDelete)
             }
         }
     }
@@ -756,11 +853,11 @@ private fun FixedCostTableHeader() {
 }
 
 @Composable
-private fun FixedCostTableRow(cost: FixedCost, onToggleStatus: (FixedCost, Boolean) -> Unit) {
-    val tint = if (cost.isPaid) PaidTint else UnpaidTint
+private fun FixedCostTableRow(cost: FixedCost, isPaid: Boolean, onToggleStatus: (FixedCost, Boolean) -> Unit) {
+    val tint = if (isPaid) PaidTint else UnpaidTint
     Card(
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = if (cost.isPaid) PaidBackground else UnpaidBackground),
+        colors = CardDefaults.cardColors(containerColor = if (isPaid) PaidBackground else UnpaidBackground),
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
@@ -770,9 +867,9 @@ private fun FixedCostTableRow(cost: FixedCost, onToggleStatus: (FixedCost, Boole
             TableCell(cost.name, Modifier.weight(1.3f), color = Ink, bold = true)
             TableCell(money(cost.amount), Modifier.weight(1.1f), color = Ink)
             Column(Modifier.weight(1.05f), horizontalAlignment = Alignment.Start) {
-                Text(if (cost.isPaid) "bezahlt" else "unbezahlt", fontSize = 10.sp, color = tint, fontWeight = FontWeight.SemiBold)
+                Text(if (isPaid) "bezahlt" else "unbezahlt", fontSize = 10.sp, color = tint, fontWeight = FontWeight.SemiBold)
                 Switch(
-                    checked = cost.isPaid,
+                    checked = isPaid,
                     onCheckedChange = { onToggleStatus(cost, it) },
                     modifier = Modifier.height(32.dp),
                 )
@@ -783,11 +880,11 @@ private fun FixedCostTableRow(cost: FixedCost, onToggleStatus: (FixedCost, Boole
 }
 
 @Composable
-private fun IrregularPaymentTableRowInFixkosten(payment: IrregularPayment, onToggleStatus: (IrregularPayment, Boolean) -> Unit) {
-    val tint = if (payment.isPaid) PaidTint else UnpaidTint
+private fun IrregularPaymentTableRowInFixkosten(payment: IrregularPayment, isPaid: Boolean, onToggleStatus: (IrregularPayment, Boolean) -> Unit) {
+    val tint = if (isPaid) PaidTint else UnpaidTint
     Card(
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = if (payment.isPaid) PaidBackground else UnpaidBackground),
+        colors = CardDefaults.cardColors(containerColor = if (isPaid) PaidBackground else UnpaidBackground),
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
@@ -797,9 +894,9 @@ private fun IrregularPaymentTableRowInFixkosten(payment: IrregularPayment, onTog
             TableCell("${payment.name} (Unregelmäßig)", Modifier.weight(1.3f), color = Ink, bold = true)
             TableCell(money(payment.amount), Modifier.weight(1.1f), color = Ink)
             Column(Modifier.weight(1.05f), horizontalAlignment = Alignment.Start) {
-                Text(if (payment.isPaid) "bezahlt" else "unbezahlt", fontSize = 10.sp, color = tint, fontWeight = FontWeight.SemiBold)
+                Text(if (isPaid) "bezahlt" else "unbezahlt", fontSize = 10.sp, color = tint, fontWeight = FontWeight.SemiBold)
                 Switch(
-                    checked = payment.isPaid,
+                    checked = isPaid,
                     onCheckedChange = { onToggleStatus(payment, it) },
                     modifier = Modifier.height(32.dp),
                 )
@@ -812,14 +909,15 @@ private fun IrregularPaymentTableRowInFixkosten(payment: IrregularPayment, onTog
 @Composable
 private fun IrregularPaymentTableRow(
     payment: IrregularPayment,
+    isPaid: Boolean,
     onToggleStatus: (IrregularPayment, Boolean) -> Unit,
     onEdit: (IrregularPayment) -> Unit,
     onDelete: (IrregularPayment) -> Unit,
 ) {
-    val tint = if (payment.isPaid) PaidTint else UnpaidTint
+    val tint = if (isPaid) PaidTint else UnpaidTint
     Card(
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = if (payment.isPaid) PaidBackground else UnpaidBackground),
+        colors = CardDefaults.cardColors(containerColor = if (isPaid) PaidBackground else UnpaidBackground),
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
@@ -830,9 +928,9 @@ private fun IrregularPaymentTableRow(
             TableCell(payment.name, Modifier.weight(1.3f), color = Ink, bold = true)
             TableCell(money(payment.amount), Modifier.weight(1.0f), color = Ink)
             Column(Modifier.weight(1.05f), horizontalAlignment = Alignment.Start) {
-                Text(if (payment.isPaid) "bezahlt" else "unbezahlt", fontSize = 10.sp, color = tint, fontWeight = FontWeight.SemiBold)
+                Text(if (isPaid) "bezahlt" else "unbezahlt", fontSize = 10.sp, color = tint, fontWeight = FontWeight.SemiBold)
                 Switch(
-                    checked = payment.isPaid,
+                    checked = isPaid,
                     onCheckedChange = { onToggleStatus(payment, it) },
                     modifier = Modifier.height(32.dp),
                 )
@@ -1136,6 +1234,96 @@ private fun DropdownField(label: String, selected: String, options: List<String>
             }
         }
     }
+}
+
+private fun getMonthKey(viewingDate: LocalDate): String {
+    return viewingDate.format(DateTimeFormatter.ofPattern("MMMM", Locale.GERMANY)).lowercase()
+}
+
+private fun loadPaidFixedCostsMap(context: Context): Map<String, Set<Long>> {
+    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("paidFixedCostsPerMonth", null)
+        ?: return emptyMap()
+    val map = mutableMapOf<String, Set<Long>>()
+    val jsonObj = JSONObject(stored)
+    jsonObj.keys().forEach { monthKey ->
+        val jsonArray = jsonObj.getJSONArray(monthKey)
+        val set = mutableSetOf<Long>()
+        for (i in 0 until jsonArray.length()) {
+            set.add(jsonArray.getLong(i))
+        }
+        map[monthKey] = set
+    }
+    return map
+}
+
+private fun savePaidFixedCostsMap(context: Context, map: Map<String, Set<Long>>) {
+    val jsonObj = JSONObject()
+    map.forEach { (monthKey, set) ->
+        val jsonArray = JSONArray()
+        set.forEach { jsonArray.put(it) }
+        jsonObj.put(monthKey, jsonArray)
+    }
+    context.getSharedPreferences("budget", Context.MODE_PRIVATE)
+        .edit()
+        .putString("paidFixedCostsPerMonth", jsonObj.toString())
+        .apply()
+}
+
+private fun loadPaidUnknownPaymentsMap(context: Context): Map<String, Set<Long>> {
+    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("paidUnknownPaymentsPerMonth", null)
+        ?: return emptyMap()
+    val map = mutableMapOf<String, Set<Long>>()
+    val jsonObj = JSONObject(stored)
+    jsonObj.keys().forEach { monthKey ->
+        val jsonArray = jsonObj.getJSONArray(monthKey)
+        val set = mutableSetOf<Long>()
+        for (i in 0 until jsonArray.length()) {
+            set.add(jsonArray.getLong(i))
+        }
+        map[monthKey] = set
+    }
+    return map
+}
+
+private fun savePaidUnknownPaymentsMap(context: Context, map: Map<String, Set<Long>>) {
+    val jsonObj = JSONObject()
+    map.forEach { (monthKey, set) ->
+        val jsonArray = JSONArray()
+        set.forEach { jsonArray.put(it) }
+        jsonObj.put(monthKey, jsonArray)
+    }
+    context.getSharedPreferences("budget", Context.MODE_PRIVATE)
+        .edit()
+        .putString("paidUnknownPaymentsPerMonth", jsonObj.toString())
+        .apply()
+}
+
+private fun toggleFixedCostPaid(context: Context, costId: Long, viewingDate: LocalDate, isPaid: Boolean): Map<String, Set<Long>> {
+    val map = loadPaidFixedCostsMap(context).toMutableMap()
+    val monthKey = getMonthKey(viewingDate)
+    val set = map[monthKey]?.toMutableSet() ?: mutableSetOf()
+    if (isPaid) set.add(costId) else set.remove(costId)
+    map[monthKey] = set
+    savePaidFixedCostsMap(context, map)
+    return map
+}
+
+private fun resetFixedCostsPaid(context: Context, viewingDate: LocalDate): Map<String, Set<Long>> {
+    val map = loadPaidFixedCostsMap(context).toMutableMap()
+    val monthKey = getMonthKey(viewingDate)
+    map[monthKey] = emptySet()
+    savePaidFixedCostsMap(context, map)
+    return map
+}
+
+private fun toggleUnknownPaymentPaid(context: Context, paymentId: Long, viewingDate: LocalDate, isPaid: Boolean): Map<String, Set<Long>> {
+    val map = loadPaidUnknownPaymentsMap(context).toMutableMap()
+    val monthKey = getMonthKey(viewingDate)
+    val set = map[monthKey]?.toMutableSet() ?: mutableSetOf()
+    if (isPaid) set.add(paymentId) else set.remove(paymentId)
+    map[monthKey] = set
+    savePaidUnknownPaymentsMap(context, map)
+    return map
 }
 
 private fun loadFixedCosts(context: Context): List<FixedCost> {

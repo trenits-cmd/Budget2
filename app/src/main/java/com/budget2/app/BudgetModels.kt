@@ -86,7 +86,9 @@ internal data class DashboardSummary(
 
 internal fun calculateDashboardSummary(
     fixedCosts: List<FixedCost>,
+    paidFixedCostIds: Set<Long> = emptySet(),
     irregularPayments: List<IrregularPayment> = emptyList(),
+    paidUnknownPaymentIds: Set<Long> = emptySet(),
     settings: DashboardSettings,
     today: LocalDate = LocalDate.now(),
     viewingDate: LocalDate = LocalDate.now(),
@@ -103,9 +105,13 @@ internal fun calculateDashboardSummary(
     val safeDaysTomorrow = (daysRemaining - 1).coerceAtLeast(1)
     
     val activeIrregular = irregularPayments.filter { isActiveMonth(it.month, viewingDate) }
-    val unknownMonthIrregular = irregularPayments.filter { it.month.trim().lowercase() == "unbekannt" }
 
-    val paid = fixedCosts.filter { it.isPaid }.sumOf { it.amount } + activeIrregular.filter { it.isPaid }.sumOf { it.amount }
+    val paid = fixedCosts.filter { it.id in paidFixedCostIds }.sumOf { it.amount } +
+        activeIrregular.filter { 
+            val clean = it.month.trim().lowercase()
+            if (clean == "unbekannt") it.id in paidUnknownPaymentIds else it.isPaid
+        }.sumOf { it.amount }
+
     val total = fixedCosts.sumOf { it.amount } + activeIrregular.sumOf { it.amount }
     val remaining = (total - paid).roundToInt().toDouble()
     
@@ -130,7 +136,6 @@ internal fun calculateDashboardSummary(
         balanceMinusBuffer = settings.balance - bufferToday,
         targetBalanceToday = targetBalanceToday,
         targetBalanceTomorrow = targetBalanceToday - DAILY_TARGET - 5.0,
-        unknownMonthIrregularPayments = unknownMonthIrregular,
     )
 }
 
