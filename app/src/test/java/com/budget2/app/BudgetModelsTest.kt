@@ -187,6 +187,29 @@ class BudgetModelsTest {
     }
 
     @Test
+    fun resetIrregularPaymentsForMonth_resetsOnlyMatchingMonth() {
+        val payments = listOf(
+            IrregularPayment(1, "Oktober", "Abbuchung", "Sonderausgabe", 100.0, true),
+            IrregularPayment(2, "November", "Abbuchung", "Winterreifen", 200.0, true),
+            IrregularPayment(3, "unbekannt", "Überweisen", "Bonus", 50.0, true),
+        )
+
+        val reset = resetIrregularPaymentsForMonth(
+            payments,
+            viewingDate = LocalDate.of(2026, 10, 11),
+        )
+
+        assertEquals(listOf(false, true, true), reset.map { it.isPaid })
+    }
+
+    @Test
+    fun nextId_avoidsIdsStillReservedByOldPaidEntries() {
+        assertEquals(1L, nextId(emptyList()))
+        assertEquals(5L, nextId(listOf(2L, 4L)))
+        assertEquals(10L, nextId(listOf(4L), reservedIds = listOf(9L, 2L)))
+    }
+
+    @Test
     fun calculateDashboardSummary_usesFebruaryTwentySeventhAsCutoff() {
         val summary = calculateDashboardSummary(
             fixedCosts = emptyList(),

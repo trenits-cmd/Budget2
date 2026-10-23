@@ -275,3 +275,29 @@ internal fun setAllIrregularPaymentsStatus(
 ): List<IrregularPayment> = payments.map { payment ->
     payment.copy(isPaid = isPaid)
 }
+
+/** Resets only the irregular payments that belong to the viewed month. */
+internal fun resetIrregularPaymentsForMonth(
+    payments: List<IrregularPayment>,
+    viewingDate: LocalDate,
+): List<IrregularPayment> = payments.map { payment ->
+    val isUnknown = payment.month.trim().lowercase() == "unbekannt"
+    if (!isUnknown && isActiveMonth(payment.month, viewingDate)) {
+        payment.copy(isPaid = false)
+    } else {
+        payment
+    }
+}
+
+/**
+ * Returns the next unused ID. Paid-state maps can still contain IDs of deleted
+ * entries, so they are reserved as well to prevent a new entry from inheriting
+ * an old payment status.
+ */
+internal fun nextId(
+    existingIds: Iterable<Long>,
+    reservedIds: Iterable<Long> = emptyList(),
+): Long {
+    val highestId = (existingIds + reservedIds).maxOrNull() ?: 0L
+    return highestId + 1L
+}

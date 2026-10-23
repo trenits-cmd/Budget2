@@ -1,6 +1,5 @@
 package com.budget2.app
 
-import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -23,8 +22,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -39,13 +40,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,6 +52,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,37 +66,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import org.json.JSONArray
-import org.json.JSONObject
-import java.text.NumberFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private val Forest = Color(0xFF0F172A)
-private val Paper = Color(0xFFF4F7FB)
-private val Ink = Color(0xFF102033)
-private val Muted = Color(0xFF62748A)
-private val PaidBackground = Color(0xFFE7F6EC)
-private val UnpaidBackground = Color(0xFFFFE9E6)
-private val PaidTint = Color(0xFF28734A)
-private val UnpaidTint = Color(0xFFB34135)
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        migrateLegacyMonthStorage(this)
+        val repository = BudgetRepository(this)
+        repository.initialize()
         setContent {
-            MaterialTheme(
-                colorScheme = lightColorScheme(
-                    primary = Forest,
-                    onPrimary = Color.White,
-                    background = Paper,
-                    surface = Color.White,
-                    onSurface = Ink,
-                ),
-            ) {
-                FixedCostsApp(this)
+            BudgetTheme {
+                FixedCostsApp(repository)
             }
         }
     }
@@ -104,16 +85,16 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun FixedCostsApp(context: Context) {
-    var fixedCosts by remember { mutableStateOf(loadFixedCosts(context)) }
-    var irregularPayments by remember { mutableStateOf(loadIrregularPayments(context)) }
-    var dashboardSettings by remember { mutableStateOf(loadDashboardSettings(context)) }
-    var paidFixedCostsMap by remember { mutableStateOf(loadPaidFixedCostsMap(context)) }
-    var paidUnknownPaymentsMap by remember { mutableStateOf(loadPaidUnknownPaymentsMap(context)) }
-    var paidSalaryMap by remember { mutableStateOf(loadPaidSalaryMap(context)) }
+private fun FixedCostsApp(repository: BudgetRepository) {
+    var fixedCosts by remember { mutableStateOf(repository.loadFixedCosts()) }
+    var irregularPayments by remember { mutableStateOf(repository.loadIrregularPayments()) }
+    var dashboardSettings by remember { mutableStateOf(repository.loadDashboardSettings()) }
+    var paidFixedCostsMap by remember { mutableStateOf(repository.loadPaidFixedCostsMap()) }
+    var paidUnknownPaymentsMap by remember { mutableStateOf(repository.loadPaidUnknownPaymentsMap()) }
+    var paidSalaryMap by remember { mutableStateOf(repository.loadPaidSalaryMap()) }
 
-    var selectedTab by remember { mutableStateOf(0) }
-    var viewingMonthOffset by remember { mutableStateOf(0) } // 0 = current month, 1 = next month
+    var selectedTab by rememberSaveable { mutableStateOf(0) }
+    var viewingMonthOffset by rememberSaveable { mutableStateOf(0) } // 0 = current, 1 = next
     val tabHistory = remember { mutableStateListOf<Int>() }
 
     var showEditor by remember { mutableStateOf(false) }
@@ -152,12 +133,12 @@ private fun FixedCostsApp(context: Context) {
 
     fun updateCosts(updated: List<FixedCost>) {
         fixedCosts = updated
-        saveFixedCosts(context, updated)
+        repository.saveFixedCosts(updated)
     }
 
     fun updateIrregular(updated: List<IrregularPayment>) {
         irregularPayments = updated
-        saveIrregularPayments(context, updated)
+        repository.saveIrregularPayments(updated)
     }
 
     Scaffold(
@@ -242,7 +223,7 @@ private fun FixedCostsApp(context: Context) {
                 paidUnknownPaymentsMap = paidUnknownPaymentsMap,
                 salaryReceived = salaryReceived,
                 onToggleSalary = { received ->
-                    paidSalaryMap = toggleSalaryReceived(context, viewingDate, received)
+                    paidSalaryMap = repository.toggleSalaryReceived(viewingDate, received)
                 },
                 modifier = Modifier.padding(padding),
             )
@@ -254,14 +235,17 @@ private fun FixedCostsApp(context: Context) {
                 paidUnknownPaymentsMap = paidUnknownPaymentsMap,
                 modifier = Modifier.padding(padding),
                 onToggleFixedCost = { cost, isPaid ->
-                    paidFixedCostsMap = toggleFixedCostPaid(context, cost.id, viewingDate, isPaid)
+                    paidFixedCostsMap = repository.toggleFixedCostPaid(cost.id, viewingDate, isPaid)
                 },
                 onToggleIrregular = { payment, isPaid ->
                     val cleanMonth = payment.month.trim().lowercase()
                     if (cleanMonth == "unbekannt") {
-                        paidUnknownPaymentsMap = toggleUnknownPaymentPaid(context, payment.id, viewingDate, isPaid)
+                        paidUnknownPaymentsMap =
+                            repository.toggleUnknownPaymentPaid(payment.id, viewingDate, isPaid)
                     } else {
-                        updateIrregular(updateIrregularPaymentStatus(irregularPayments, payment.id, isPaid))
+                        updateIrregular(
+                            updateIrregularPaymentStatus(irregularPayments, payment.id, isPaid),
+                        )
                     }
                 },
                 onResetStatuses = { confirmReset = true },
@@ -275,9 +259,12 @@ private fun FixedCostsApp(context: Context) {
                 onToggleStatus = { payment, isPaid ->
                     val cleanMonth = payment.month.trim().lowercase()
                     if (cleanMonth == "unbekannt") {
-                        paidUnknownPaymentsMap = toggleUnknownPaymentPaid(context, payment.id, viewingDate, isPaid)
+                        paidUnknownPaymentsMap =
+                            repository.toggleUnknownPaymentPaid(payment.id, viewingDate, isPaid)
                     } else {
-                        updateIrregular(updateIrregularPaymentStatus(irregularPayments, payment.id, isPaid))
+                        updateIrregular(
+                            updateIrregularPaymentStatus(irregularPayments, payment.id, isPaid),
+                        )
                     }
                 },
                 onResetStatuses = { confirmIrregularReset = true },
@@ -297,7 +284,7 @@ private fun FixedCostsApp(context: Context) {
                 modifier = Modifier.padding(padding),
                 onSaveDashboardSettings = { updated ->
                     dashboardSettings = updated
-                    saveDashboardSettings(context, updated)
+                    repository.saveDashboardSettings(updated)
                 },
                 onGoToDashboard = { selectTab(0) },
                 onAdd = {
@@ -321,7 +308,10 @@ private fun FixedCostsApp(context: Context) {
                 onSave = { paymentType, name, amount, dueDay ->
                     val existing = editingCost
                     val updatedCost = FixedCost(
-                        id = existing?.id ?: ((fixedCosts.maxOfOrNull { it.id } ?: 0L) + 1L),
+                        id = existing?.id ?: nextId(
+                            fixedCosts.map { it.id },
+                            paidFixedCostsMap.values.flatten(),
+                        ),
                         paymentType = paymentType,
                         name = name,
                         amount = amount,
@@ -348,7 +338,10 @@ private fun FixedCostsApp(context: Context) {
                 onSave = { month, paymentType, name, amount ->
                     val existing = editingIrregular
                     val updatedPayment = IrregularPayment(
-                        id = existing?.id ?: ((irregularPayments.maxOfOrNull { it.id } ?: 0L) + 1L),
+                        id = existing?.id ?: nextId(
+                            irregularPayments.map { it.id },
+                            paidUnknownPaymentsMap.values.flatten(),
+                        ),
                         month = month,
                         paymentType = paymentType,
                         name = name,
@@ -417,21 +410,14 @@ private fun FixedCostsApp(context: Context) {
             confirmButton = {
                 Button(
                     onClick = {
-                        paidFixedCostsMap = resetFixedCostsPaid(context, viewingDate)
-                        val resetMonthKey = monthKey(viewingDate)
+                        paidFixedCostsMap = repository.resetFixedCostsPaid(viewingDate)
                         val unknownMap = paidUnknownPaymentsMap.toMutableMap()
-                        unknownMap[resetMonthKey] = emptySet()
+                        unknownMap[monthKey(viewingDate)] = emptySet()
                         paidUnknownPaymentsMap = unknownMap
-                        savePaidUnknownPaymentsMap(context, unknownMap)
-
-                        val updatedIrregular = irregularPayments.map { payment ->
-                            if (isActiveMonth(payment.month, viewingDate) && payment.month.trim().lowercase() != "unbekannt") {
-                                payment.copy(isPaid = false)
-                            } else {
-                                payment
-                            }
-                        }
-                        updateIrregular(updatedIrregular)
+                        repository.savePaidUnknownPaymentsMap(unknownMap)
+                        updateIrregular(
+                            resetIrregularPaymentsForMonth(irregularPayments, viewingDate),
+                        )
                         confirmReset = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Forest),
@@ -452,20 +438,13 @@ private fun FixedCostsApp(context: Context) {
             confirmButton = {
                 Button(
                     onClick = {
-                        val resetMonthKey = monthKey(viewingDate)
                         val unknownMap = paidUnknownPaymentsMap.toMutableMap()
-                        unknownMap[resetMonthKey] = emptySet()
+                        unknownMap[monthKey(viewingDate)] = emptySet()
                         paidUnknownPaymentsMap = unknownMap
-                        savePaidUnknownPaymentsMap(context, unknownMap)
-
-                        val updatedIrregular = irregularPayments.map { payment ->
-                            if (isActiveMonth(payment.month, viewingDate) && payment.month.trim().lowercase() != "unbekannt") {
-                                payment.copy(isPaid = false)
-                            } else {
-                                payment
-                            }
-                        }
-                        updateIrregular(updatedIrregular)
+                        repository.savePaidUnknownPaymentsMap(unknownMap)
+                        updateIrregular(
+                            resetIrregularPaymentsForMonth(irregularPayments, viewingDate),
+                        )
                         confirmIrregularReset = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Forest),
@@ -1159,7 +1138,7 @@ private fun SettingsTab(
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(cost.name, fontSize = 14.sp, color = Ink, fontWeight = FontWeight.SemiBold)
                             Text(
-                                "${cost.paymentType} · ${money(cost.amount)} · Datum ${cost.dueDay}",
+                                "${cost.paymentType} · ${money(cost.amount)} · ${dueDayLabel(cost.dueDay)}",
                                 fontSize = 12.sp,
                                 color = Muted,
                                 maxLines = 1,
@@ -1185,12 +1164,12 @@ private fun DashboardSettingsCard(
     onSave: (DashboardSettings) -> Unit,
     onSaved: () -> Unit,
 ) {
-    var balance by remember(settings) { mutableStateOf(settings.balance.toInt().toString()) }
-    var minimumBuffer by remember(settings) { mutableStateOf(settings.minimumBuffer.toInt().toString()) }
+    var balance by remember(settings) { mutableStateOf(settings.balance.inputValue()) }
+    var minimumBuffer by remember(settings) { mutableStateOf(settings.minimumBuffer.inputValue()) }
     var showSavedMessage by remember { mutableStateOf(false) }
-    val parsedBalance = balance.trim().toIntOrNull()?.toDouble() ?: 0.0
-    val parsedBuffer = minimumBuffer.trim().toIntOrNull()?.toDouble() ?: 0.0
-    val valid = parsedBuffer >= 0
+    val parsedBalance = balance.parseAmount()
+    val parsedBuffer = minimumBuffer.parseAmount()
+    val valid = parsedBalance != null && parsedBuffer != null && parsedBuffer >= 0.0
 
     LaunchedEffect(showSavedMessage) {
         if (showSavedMessage) {
@@ -1213,11 +1192,11 @@ private fun DashboardSettingsCard(
                 fontSize = 12.sp,
                 color = Muted,
             )
-            AmountField("Aktueller Kontostand in Euro", balance, keyboardType = KeyboardType.Number) { 
+            AmountField("Aktueller Kontostand in Euro", balance) {
                 balance = it
                 showSavedMessage = false
             }
-            AmountField("Mindestpuffer", minimumBuffer, keyboardType = KeyboardType.Number) { 
+            AmountField("Mindestpuffer", minimumBuffer) {
                 minimumBuffer = it
                 showSavedMessage = false
             }
@@ -1226,7 +1205,12 @@ private fun DashboardSettingsCard(
                 Button(
                     onClick = {
                         if (valid) {
-                            onSave(DashboardSettings(parsedBalance, parsedBuffer))
+                            onSave(
+                                DashboardSettings(
+                                    balance = requireNotNull(parsedBalance),
+                                    minimumBuffer = requireNotNull(parsedBuffer),
+                                ),
+                            )
                             showSavedMessage = true
                         }
                     },
@@ -1249,20 +1233,25 @@ private fun FixedCostEditorDialog(
     onDismiss: () -> Unit,
     onSave: (String, String, Double, Int) -> Unit,
 ) {
+    val initialDueDay = initial?.dueDay?.takeIf { it != 0 } ?: 1
     var name by remember { mutableStateOf(initial?.name.orEmpty()) }
     var amount by remember { mutableStateOf(initial?.amount?.inputValue().orEmpty()) }
     var paymentType by remember { mutableStateOf(initial?.paymentType ?: PaymentTypes.first()) }
-    var dueDay by remember { mutableStateOf(initial?.dueDay?.takeIf { it != 0 }?.toString() ?: "1") }
+    var dueDay by remember { mutableStateOf(if (initialDueDay < 0) (-initialDueDay).toString() else initialDueDay.toString()) }
+    var dueDayFromMonthEnd by remember { mutableStateOf(initialDueDay < 0) }
     val parsedAmount = amount.parseAmount()
     val parsedDueDay = dueDay.toIntOrNull()
     val valid = name.isNotBlank() && parsedAmount != null && parsedAmount >= 0 &&
-        parsedDueDay != null && parsedDueDay in -31..31 && parsedDueDay != 0
+        parsedDueDay != null && parsedDueDay in 1..31
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "Zweck hinzufügen" else "Zweck bearbeiten", fontWeight = FontWeight.SemiBold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -1274,24 +1263,41 @@ private fun FixedCostEditorDialog(
                 DropdownField("Zahlungsart", paymentType, PaymentTypes) { paymentType = it }
                 OutlinedTextField(
                     value = dueDay,
-                    onValueChange = { dueDay = it },
-                    label = { Text("Datum (Tag im Monat)") },
-                    supportingText = { Text("1–31; negative Werte zählen vom Monatsende rückwärts.") },
+                    onValueChange = { dueDay = it.filter(Char::isDigit).take(2) },
+                    label = { Text("Tag im Monat") },
+                    supportingText = { Text("1–31") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Vom Monatsende zählen", fontSize = 13.sp, color = Ink)
+                        Text(
+                            "Beispiel: 27 bedeutet 27 Tage vor Monatsende.",
+                            fontSize = 11.sp,
+                            color = Muted,
+                        )
+                    }
+                    Switch(
+                        checked = dueDayFromMonthEnd,
+                        onCheckedChange = { dueDayFromMonthEnd = it },
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    if (valid) onSave(
-                        paymentType,
-                        name.trim(),
-                        requireNotNull(parsedAmount),
-                        requireNotNull(parsedDueDay),
-                    )
+                    if (valid) {
+                        val day = requireNotNull(parsedDueDay)
+                        onSave(
+                            paymentType,
+                            name.trim(),
+                            requireNotNull(parsedAmount),
+                            if (dueDayFromMonthEnd) -day else day,
+                        )
+                    }
                 },
                 enabled = valid,
                 colors = ButtonDefaults.buttonColors(containerColor = Forest),
@@ -1321,7 +1327,10 @@ private fun IrregularPaymentEditorDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "Unregelmäßige Zahlung hinzufügen" else "Unregelmäßige Zahlung bearbeiten", fontWeight = FontWeight.SemiBold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 DropdownField("Monat", month, MonthOptions) { month = it }
                 OutlinedTextField(
                     value = name,
@@ -1399,261 +1408,3 @@ private fun DropdownField(label: String, selected: String, options: List<String>
     }
 }
 
-private fun migrateLegacyMonthStorage(context: Context) {
-    val prefs = context.getSharedPreferences("budget", Context.MODE_PRIVATE)
-    val today = LocalDate.now()
-
-    listOf("paidFixedCostsPerMonth", "paidUnknownPaymentsPerMonth").forEach { name ->
-        val stored = prefs.getString(name, null) ?: return@forEach
-        runCatching {
-            val source = JSONObject(stored)
-            val merged = linkedMapOf<String, MutableSet<Long>>()
-            for (oldKey in source.keys()) {
-                val newKey = migrateLegacyMonthKey(oldKey, today)
-                val set = merged.getOrPut(newKey) { mutableSetOf() }
-                val array = source.optJSONArray(oldKey) ?: continue
-                for (index in 0 until array.length()) {
-                    set.add(array.optLong(index))
-                }
-            }
-            val target = JSONObject()
-            merged.forEach { (key, set) ->
-                val array = JSONArray()
-                set.forEach { array.put(it) }
-                target.put(key, array)
-            }
-            if (target.toString() != source.toString()) {
-                prefs.edit().putString(name, target.toString()).apply()
-            }
-        }
-    }
-
-    val storedSalary = prefs.getString("paidSalaryMap", null) ?: return
-    runCatching {
-        val source = JSONObject(storedSalary)
-        val target = JSONObject()
-        for (oldKey in source.keys()) {
-            target.put(migrateLegacyMonthKey(oldKey, today), source.optBoolean(oldKey, false))
-        }
-        if (target.toString() != source.toString()) {
-            prefs.edit().putString("paidSalaryMap", target.toString()).apply()
-        }
-    }
-}
-
-private fun loadLongSetMap(context: Context, preferenceName: String): Map<String, Set<Long>> {
-    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE)
-        .getString(preferenceName, null)
-        ?: return emptyMap()
-    return runCatching {
-        val jsonObj = JSONObject(stored)
-        val map = mutableMapOf<String, Set<Long>>()
-        for (monthKey in jsonObj.keys()) {
-            val jsonArray = jsonObj.optJSONArray(monthKey) ?: continue
-            val set = mutableSetOf<Long>()
-            for (index in 0 until jsonArray.length()) {
-                set.add(jsonArray.optLong(index))
-            }
-            map[monthKey] = set
-        }
-        map
-    }.getOrDefault(emptyMap())
-}
-
-private fun loadPaidFixedCostsMap(context: Context): Map<String, Set<Long>> =
-    loadLongSetMap(context, "paidFixedCostsPerMonth")
-
-private fun savePaidFixedCostsMap(context: Context, map: Map<String, Set<Long>>) {
-    val jsonObj = JSONObject()
-    map.forEach { (monthKey, set) ->
-        val jsonArray = JSONArray()
-        set.forEach { jsonArray.put(it) }
-        jsonObj.put(monthKey, jsonArray)
-    }
-    context.getSharedPreferences("budget", Context.MODE_PRIVATE)
-        .edit()
-        .putString("paidFixedCostsPerMonth", jsonObj.toString())
-        .apply()
-}
-
-private fun loadPaidUnknownPaymentsMap(context: Context): Map<String, Set<Long>> =
-    loadLongSetMap(context, "paidUnknownPaymentsPerMonth")
-
-private fun savePaidUnknownPaymentsMap(context: Context, map: Map<String, Set<Long>>) {
-    val jsonObj = JSONObject()
-    map.forEach { (monthKey, set) ->
-        val jsonArray = JSONArray()
-        set.forEach { jsonArray.put(it) }
-        jsonObj.put(monthKey, jsonArray)
-    }
-    context.getSharedPreferences("budget", Context.MODE_PRIVATE)
-        .edit()
-        .putString("paidUnknownPaymentsPerMonth", jsonObj.toString())
-        .apply()
-}
-
-private fun loadPaidSalaryMap(context: Context): Map<String, Boolean> {
-    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("paidSalaryMap", null)
-        ?: return emptyMap()
-    return runCatching {
-        val map = mutableMapOf<String, Boolean>()
-        val jsonObj = JSONObject(stored)
-        for (monthKey in jsonObj.keys()) {
-            map[monthKey] = jsonObj.optBoolean(monthKey, false)
-        }
-        map
-    }.getOrDefault(emptyMap())
-}
-
-private fun savePaidSalaryMap(context: Context, map: Map<String, Boolean>) {
-    val jsonObj = JSONObject()
-    map.forEach { (monthKey, received) ->
-        jsonObj.put(monthKey, received)
-    }
-    context.getSharedPreferences("budget", Context.MODE_PRIVATE)
-        .edit()
-        .putString("paidSalaryMap", jsonObj.toString())
-        .apply()
-}
-
-private fun toggleFixedCostPaid(context: Context, costId: Long, viewingDate: LocalDate, isPaid: Boolean): Map<String, Set<Long>> {
-    val map = loadPaidFixedCostsMap(context).toMutableMap()
-    val key = monthKey(viewingDate)
-    val set = map[key]?.toMutableSet() ?: mutableSetOf()
-    if (isPaid) set.add(costId) else set.remove(costId)
-    map[key] = set
-    savePaidFixedCostsMap(context, map)
-    return map
-}
-
-private fun resetFixedCostsPaid(context: Context, viewingDate: LocalDate): Map<String, Set<Long>> {
-    val map = loadPaidFixedCostsMap(context).toMutableMap()
-    map[monthKey(viewingDate)] = emptySet()
-    savePaidFixedCostsMap(context, map)
-    return map
-}
-
-private fun toggleUnknownPaymentPaid(context: Context, paymentId: Long, viewingDate: LocalDate, isPaid: Boolean): Map<String, Set<Long>> {
-    val map = loadPaidUnknownPaymentsMap(context).toMutableMap()
-    val key = monthKey(viewingDate)
-    val set = map[key]?.toMutableSet() ?: mutableSetOf()
-    if (isPaid) set.add(paymentId) else set.remove(paymentId)
-    map[key] = set
-    savePaidUnknownPaymentsMap(context, map)
-    return map
-}
-
-private fun toggleSalaryReceived(context: Context, viewingDate: LocalDate, received: Boolean): Map<String, Boolean> {
-    val map = loadPaidSalaryMap(context).toMutableMap()
-    map[monthKey(viewingDate)] = received
-    savePaidSalaryMap(context, map)
-    return map
-}
-
-private fun loadFixedCosts(context: Context): List<FixedCost> {
-    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("fixedCosts", null)
-        ?: return DefaultFixedCosts
-    return runCatching {
-        val json = JSONArray(stored)
-        List(json.length()) { index ->
-            val item = json.getJSONObject(index)
-            FixedCost(
-                id = item.optLong("id"),
-                paymentType = item.optString("paymentType", PaymentTypes.first()),
-                name = item.optString("name"),
-                amount = item.optDouble("amount", 0.0),
-                isPaid = item.optBoolean("isPaid", false),
-                dueDay = item.optInt("dueDay", 1),
-            )
-        }
-    }.getOrDefault(emptyList())
-}
-
-private fun loadIrregularPayments(context: Context): List<IrregularPayment> {
-    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("irregularPayments", null)
-        ?: return emptyList()
-    return runCatching {
-        val json = JSONArray(stored)
-        List(json.length()) { index ->
-            val item = json.getJSONObject(index)
-            IrregularPayment(
-                id = item.optLong("id"),
-                month = item.optString("month", "unbekannt"),
-                paymentType = item.optString("paymentType", PaymentTypes.first()),
-                name = item.optString("name"),
-                amount = item.optDouble("amount", 0.0),
-                isPaid = item.optBoolean("isPaid", false),
-            )
-        }
-    }.getOrDefault(emptyList())
-}
-
-private fun loadDashboardSettings(context: Context): DashboardSettings {
-    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE)
-        .getString("dashboardSettings", null)
-        ?: return DashboardSettings()
-    return runCatching {
-        val json = JSONObject(stored)
-        DashboardSettings(
-            balance = json.optDouble("balance", 0.0),
-            minimumBuffer = json.optDouble("minimumBuffer", 0.0),
-        )
-    }.getOrDefault(DashboardSettings())
-}
-
-private fun saveDashboardSettings(context: Context, settings: DashboardSettings) {
-    val json = JSONObject().apply {
-        put("balance", settings.balance)
-        put("minimumBuffer", settings.minimumBuffer)
-    }
-    context.getSharedPreferences("budget", Context.MODE_PRIVATE)
-        .edit()
-        .putString("dashboardSettings", json.toString())
-        .apply()
-}
-
-private fun saveFixedCosts(context: Context, fixedCosts: List<FixedCost>) {
-    val json = JSONArray()
-    fixedCosts.forEach { cost ->
-        json.put(
-            JSONObject().apply {
-                put("id", cost.id)
-                put("paymentType", cost.paymentType)
-                put("name", cost.name)
-                put("amount", cost.amount)
-                put("isPaid", cost.isPaid)
-                put("dueDay", cost.dueDay)
-            },
-        )
-    }
-    context.getSharedPreferences("budget", Context.MODE_PRIVATE)
-        .edit()
-        .putString("fixedCosts", json.toString())
-        .apply()
-}
-
-private fun saveIrregularPayments(context: Context, payments: List<IrregularPayment>) {
-    val json = JSONArray()
-    payments.forEach { payment ->
-        json.put(
-            JSONObject().apply {
-                put("id", payment.id)
-                put("month", payment.month)
-                put("paymentType", payment.paymentType)
-                put("name", payment.name)
-                put("amount", payment.amount)
-                put("isPaid", payment.isPaid)
-            },
-        )
-    }
-    context.getSharedPreferences("budget", Context.MODE_PRIVATE)
-        .edit()
-        .putString("irregularPayments", json.toString())
-        .apply()
-}
-
-private fun money(value: Double): String = NumberFormat.getCurrencyInstance(Locale.GERMANY).format(value)
-
-private fun String.parseAmount(): Double? = replace(',', '.').toDoubleOrNull()?.takeIf { it.isFinite() }
-
-private fun Double.inputValue(): String = toString()
