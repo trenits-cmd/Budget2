@@ -3,6 +3,7 @@ package com.budget2.app
 import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -49,6 +50,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -109,6 +111,7 @@ private fun FixedCostsApp(context: Context) {
 
     var selectedTab by remember { mutableStateOf(0) }
     var viewingMonthOffset by remember { mutableStateOf(0) } // 0 = current month, 1 = next month
+    val tabHistory = remember { mutableStateListOf<Int>() }
 
     var showEditor by remember { mutableStateOf(false) }
     var editingCost by remember { mutableStateOf<FixedCost?>(null) }
@@ -124,6 +127,25 @@ private fun FixedCostsApp(context: Context) {
     val viewingMonthName = viewingDate.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.GERMANY))
     val viewingMonthKey = monthKey(viewingDate)
     val salaryReceived = paidSalaryMap[viewingMonthKey] == true
+
+    fun selectTab(index: Int) {
+        if (index == selectedTab) return
+        if (index == 0) {
+            tabHistory.clear()
+        } else {
+            tabHistory.add(selectedTab)
+        }
+        selectedTab = index
+    }
+
+    val hasOpenDialog = showEditor || showIrregularEditor || deletingCost != null ||
+        deletingIrregular != null || confirmReset || confirmIrregularReset
+    BackHandler(enabled = !hasOpenDialog && (tabHistory.isNotEmpty() || viewingMonthOffset != 0)) {
+        when {
+            tabHistory.isNotEmpty() -> selectedTab = tabHistory.removeAt(tabHistory.lastIndex)
+            viewingMonthOffset != 0 -> viewingMonthOffset = 0
+        }
+    }
 
     fun updateCosts(updated: List<FixedCost>) {
         fixedCosts = updated
@@ -172,7 +194,7 @@ private fun FixedCostsApp(context: Context) {
                     listOf("Dashboard", "Fixkosten", "Unregelmäßig", "Settings").forEachIndexed { index, title ->
                         Tab(
                             selected = selectedTab == index,
-                            onClick = { selectedTab = index },
+                            onClick = { selectTab(index) },
                             text = { Text(title) },
                         )
                     }
@@ -213,7 +235,7 @@ private fun FixedCostsApp(context: Context) {
                     }
                 },
                 onResetStatuses = { confirmReset = true },
-                onGoToSettings = { selectedTab = 3 },
+                onGoToSettings = { selectTab(3) },
             )
             2 -> IrregularPaymentsTab(
                 irregularPayments = irregularPayments,
