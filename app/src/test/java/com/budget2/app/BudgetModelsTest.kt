@@ -86,7 +86,7 @@ class BudgetModelsTest {
         assertEquals(15.0, summary.bufferTomorrow, 0.0)
         assertEquals(1045.0, summary.balanceMinusBuffer, 0.0)
         assertEquals(1145.0, summary.targetBalanceToday, 0.0)
-        assertEquals(1080.0, summary.targetBalanceTomorrow, 0.0)
+        assertEquals(1085.0, summary.targetBalanceTomorrow, 0.0)
     }
 
     @Test
@@ -107,6 +107,72 @@ class BudgetModelsTest {
 
         assertEquals(700.0, summary.paidFixedCosts, 0.0)
         assertEquals(50.0, summary.remainingFixedCosts, 0.0)
+    }
+
+    @Test
+    fun monthKey_containsYearAndMonth() {
+        assertEquals("2026-10", monthKey(LocalDate.of(2026, 10, 23)))
+        assertEquals("2027-01", monthKey(LocalDate.of(2027, 1, 2)))
+    }
+
+    @Test
+    fun monthSortIndex_ordersUnknownFirstThenCalendarMonths() {
+        val sorted = listOf("Dezember", "unbekannt", "Januar", "März")
+            .sortedBy { monthSortIndex(it) }
+
+        assertEquals(listOf("unbekannt", "Januar", "März", "Dezember"), sorted)
+    }
+
+    @Test
+    fun migrateLegacyMonthKey_mapsOldGermanMonthNames() {
+        val today = LocalDate.of(2026, 10, 23)
+
+        assertEquals("2026-10", migrateLegacyMonthKey("oktober", today))
+        assertEquals("2026-03", migrateLegacyMonthKey("März", today))
+        assertEquals("2025-12", migrateLegacyMonthKey("2025-12", today))
+        assertEquals("unbekannt", migrateLegacyMonthKey("unbekannt", today))
+    }
+
+    @Test
+    fun irregularPaymentsForMonth_includesUnknownOnlyForCurrentMonth() {
+        val payments = listOf(
+            IrregularPayment(1, "Oktober", "Abbuchung", "Sonderausgabe", 100.0, true),
+            IrregularPayment(2, "November", "Abbuchung", "Winterreifen", 200.0, false),
+            IrregularPayment(3, "unbekannt", "Überweisen", "Bonus", 50.0, false),
+        )
+
+        assertEquals(
+            listOf(1L, 3L),
+            irregularPaymentsForMonth(
+                payments,
+                viewingDate = LocalDate.of(2026, 10, 11),
+                today = LocalDate.of(2026, 10, 11),
+            ).map { it.id },
+        )
+        assertEquals(
+            listOf(2L),
+            irregularPaymentsForMonth(
+                payments,
+                viewingDate = LocalDate.of(2026, 11, 11),
+                today = LocalDate.of(2026, 10, 11),
+            ).map { it.id },
+        )
+    }
+
+    @Test
+    fun paymentTypeTotals_ignoresUnknownPaymentsForFutureMonths() {
+        val totals = paymentTypeTotals(
+            fixedCosts = emptyList(),
+            irregularPayments = listOf(
+                IrregularPayment(1, "November", "Abbuchung", "Winterreifen", 200.0, false),
+                IrregularPayment(2, "unbekannt", "Überweisen", "Bonus", 50.0, false),
+            ),
+            viewingDate = LocalDate.of(2026, 11, 11),
+            today = LocalDate.of(2026, 10, 11),
+        )
+
+        assertEquals(200.0, totals.first { it.paymentType == "Abbuchung" }.total, 0.0)
+        assertEquals(null, totals.firstOrNull { it.paymentType == "Überweisen" })
     }
 
     @Test

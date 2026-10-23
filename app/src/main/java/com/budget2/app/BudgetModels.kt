@@ -45,10 +45,49 @@ internal fun isActiveMonth(monthStr: String, viewingDate: LocalDate = LocalDate.
     return clean == viewingMonthName || clean == viewingMonthNumber
 }
 
+internal fun monthKey(date: LocalDate): String =
+    date.format(DateTimeFormatter.ofPattern("yyyy-MM", Locale.ROOT))
+
+/**
+ * Older app versions stored paid states under the bare German month name ("oktober").
+ * Those keys are migrated to the year-aware "yyyy-MM" format so that the same month in
+ * a different year does not inherit last year's payment status.
+ */
+internal fun migrateLegacyMonthKey(key: String, today: LocalDate = LocalDate.now()): String {
+    val clean = key.trim()
+    if (Regex("\\d{4}-\\d{2}").matches(clean)) return clean
+    val monthIndex = MonthOptions.indexOfFirst { it.equals(clean, ignoreCase = true) }
+    if (monthIndex <= 0) return clean
+    return String.format(Locale.ROOT, "%04d-%02d", today.year, monthIndex)
+}
+
+/**
+ * Irregular payments that belong to the viewed month's budget. A payment with the
+ * month "unbekannt" has no date yet and therefore only influences the current month.
+ */
+internal fun irregularPaymentsForMonth(
+    payments: List<IrregularPayment>,
+    viewingDate: LocalDate,
+    today: LocalDate = LocalDate.now(),
+): List<IrregularPayment> {
+    val viewingMonth = YearMonth.from(viewingDate)
+    val currentMonth = YearMonth.from(today)
+    return payments.filter { payment ->
+        if (!isActiveMonth(payment.month, viewingDate)) return@filter false
+        val clean = payment.month.trim().lowercase()
+        clean != "unbekannt" || viewingMonth == currentMonth
+    }
+}
+
 internal fun matchesMonth(targetMonth: String, viewingDate: LocalDate): Boolean {
     val clean = targetMonth.trim().lowercase()
     val viewingMonthName = viewingDate.format(DateTimeFormatter.ofPattern("MMMM", Locale.GERMANY)).lowercase()
     return clean == viewingMonthName
+}
+
+internal fun monthSortIndex(month: String): Int {
+    val index = MonthOptions.indexOfFirst { it.equals(month.trim(), ignoreCase = true) }
+    return if (index >= 0) index else MonthOptions.lastIndex + 1
 }
 
 internal val DefaultFixedCosts = listOf(
@@ -119,12 +158,7 @@ internal fun calculateDashboardSummary(
     val safeDaysRemaining = daysRemaining.coerceAtLeast(1)
     val safeDaysTomorrow = (daysRemaining - 1).coerceAtLeast(1)
     
-    val activeIrregular = irregularPayments.filter { isActiveMonth(it.month, viewingDate) }
-    val budgetIrregular = activeIrregular.filter { payment ->
-        val clean = payment.month.trim().lowercase()
-        if (clean == "unbekannt") YearMonth.from(viewingDate) == YearMonth.from(today)
-        else isActiveMonth(payment.month, viewingDate)
-    }
+    val budgetIrregular = irregularPaymentsForMonth(irregularPayments, viewingDate, today)
 
     val paid = fixedCosts.sumOf { cost ->
         val isPaid = paidFixedCostIds?.contains(cost.id) ?: cost.isPaid
@@ -160,7 +194,8 @@ internal fun calculateDashboardSummary(
         bufferTomorrow = bufferTomorrow,
         balanceMinusBuffer = effectiveBalance - bufferToday,
         targetBalanceToday = targetBalanceToday,
-        targetBalanceTomorrow = targetBalanceToday - DAILY_TARGET - 5.0,
+        targetBalanceTomorrow = DAILY_TARGET * (daysForTarget - 1).coerceAtLeast(0) +
+            settings.minimumBuffer + remaining,
     )
 }
 
@@ -172,8 +207,9 @@ internal fun paymentTypeTotals(
     viewingDate: LocalDate = LocalDate.now(),
     paidFixedCostIds: Set<Long>? = null,
     paidUnknownPaymentIds: Set<Long> = emptySet(),
+    today: LocalDate = LocalDate.now(),
 ): List<PaymentTypeTotal> {
-    val activeIrregular = irregularPayments.filter { isActiveMonth(it.month, viewingDate) }
+    val activeIrregular = irregularPaymentsForMonth(irregularPayments, viewingDate, today)
     val allCosts = mutableListOf<Triple<String, Double, Boolean>>()
     fixedCosts.forEach { cost ->
         val isPaid = paidFixedCostIds?.contains(cost.id) ?: cost.isPaid

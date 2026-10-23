@@ -80,6 +80,7 @@ private val UnpaidTint = Color(0xFFB34135)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        migrateLegacyMonthStorage(this)
         setContent {
             MaterialTheme(
                 colorScheme = lightColorScheme(
@@ -121,8 +122,8 @@ private fun FixedCostsApp(context: Context) {
 
     val viewingDate = LocalDate.now().plusMonths(viewingMonthOffset.toLong())
     val viewingMonthName = viewingDate.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.GERMANY))
-    val monthKey = getMonthKey(viewingDate)
-    val salaryReceived = paidSalaryMap[monthKey] == true
+    val viewingMonthKey = monthKey(viewingDate)
+    val salaryReceived = paidSalaryMap[viewingMonthKey] == true
 
     fun updateCosts(updated: List<FixedCost>) {
         fixedCosts = updated
@@ -364,9 +365,9 @@ private fun FixedCostsApp(context: Context) {
                 Button(
                     onClick = {
                         paidFixedCostsMap = resetFixedCostsPaid(context, viewingDate)
-                        val monthKey = getMonthKey(viewingDate)
+                        val resetMonthKey = monthKey(viewingDate)
                         val unknownMap = paidUnknownPaymentsMap.toMutableMap()
-                        unknownMap[monthKey] = emptySet()
+                        unknownMap[resetMonthKey] = emptySet()
                         paidUnknownPaymentsMap = unknownMap
                         savePaidUnknownPaymentsMap(context, unknownMap)
 
@@ -398,9 +399,9 @@ private fun FixedCostsApp(context: Context) {
             confirmButton = {
                 Button(
                     onClick = {
-                        val monthKey = getMonthKey(viewingDate)
+                        val resetMonthKey = monthKey(viewingDate)
                         val unknownMap = paidUnknownPaymentsMap.toMutableMap()
-                        unknownMap[monthKey] = emptySet()
+                        unknownMap[resetMonthKey] = emptySet()
                         paidUnknownPaymentsMap = unknownMap
                         savePaidUnknownPaymentsMap(context, unknownMap)
 
@@ -437,9 +438,9 @@ private fun DashboardTab(
     onToggleSalary: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val monthKey = getMonthKey(viewingDate)
-    val paidFixedIds = paidFixedCostsMap[monthKey] ?: emptySet()
-    val paidUnknownIds = paidUnknownPaymentsMap[monthKey] ?: emptySet()
+    val viewingMonthKey = monthKey(viewingDate)
+    val paidFixedIds = paidFixedCostsMap[viewingMonthKey] ?: emptySet()
+    val paidUnknownIds = paidUnknownPaymentsMap[viewingMonthKey] ?: emptySet()
 
     val totals = paymentTypeTotals(
         fixedCosts = fixedCosts,
@@ -457,17 +458,9 @@ private fun DashboardTab(
         today = LocalDate.now(),
         viewingDate = viewingDate,
     )
-    val activeIrregular = irregularPayments.filter { isActiveMonth(it.month, viewingDate) }
-    val total = fixedCosts.sumOf { it.amount } + activeIrregular.sumOf { it.amount }
-    
-    val paid = fixedCosts.filter { it.id in paidFixedIds }.sumOf { it.amount } +
-        activeIrregular.filter { payment ->
-            val clean = payment.month.trim().lowercase()
-            if (clean == "unbekannt") payment.id in paidUnknownIds else payment.isPaid
-        }.sumOf { it.amount }
-
-    val unpaid = total - paid
-    val maxPaymentTypeTotal = totals.maxOfOrNull { it.total } ?: 0.0
+    val total = summary.paidFixedCosts + summary.remainingFixedCosts
+    val paid = summary.paidFixedCosts
+    val unpaid = summary.remainingFixedCosts
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -595,7 +588,7 @@ private fun DashboardTab(
                         Text("Noch keine Fixkosten vorhanden.", fontSize = 13.sp, color = Muted)
                     } else {
                         totals.forEach { item ->
-                            PaymentTypeBar(item, maxPaymentTypeTotal)
+                            PaymentTypeBar(item)
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -652,7 +645,7 @@ private fun DashboardSummary(label: String, value: String, modifier: Modifier, t
 }
 
 @Composable
-private fun PaymentTypeBar(total: PaymentTypeTotal, maxTotal: Double) {
+private fun PaymentTypeBar(total: PaymentTypeTotal) {
     val paidPercent = if (total.total > 0) (total.paid / total.total * 100).toInt() else 0
     val unpaidPercent = if (total.total > 0) (total.unpaid / total.total * 100).toInt() else 0
 
@@ -737,11 +730,11 @@ private fun FixedCostsTab(
     onResetStatuses: () -> Unit,
     onGoToSettings: () -> Unit,
 ) {
-    val monthKey = getMonthKey(viewingDate)
-    val paidFixedIds = paidFixedCostsMap[monthKey] ?: emptySet()
-    val paidUnknownIds = paidUnknownPaymentsMap[monthKey] ?: emptySet()
+    val viewingMonthKey = monthKey(viewingDate)
+    val paidFixedIds = paidFixedCostsMap[viewingMonthKey] ?: emptySet()
+    val paidUnknownIds = paidUnknownPaymentsMap[viewingMonthKey] ?: emptySet()
 
-    val activeIrregular = irregularPayments.filter { isActiveMonth(it.month, viewingDate) }
+    val activeIrregular = irregularPaymentsForMonth(irregularPayments, viewingDate)
     val totalCount = fixedCosts.size + activeIrregular.size
 
     val paidFixedCount = fixedCosts.count { it.id in paidFixedIds }
@@ -811,8 +804,8 @@ private fun IrregularPaymentsTab(
     onEdit: (IrregularPayment) -> Unit,
     onDelete: (IrregularPayment) -> Unit,
 ) {
-    val monthKey = getMonthKey(viewingDate)
-    val paidUnknownIds = paidUnknownPaymentsMap[monthKey] ?: emptySet()
+    val viewingMonthKey = monthKey(viewingDate)
+    val paidUnknownIds = paidUnknownPaymentsMap[viewingMonthKey] ?: emptySet()
 
     val unpaidCount = irregularPayments.count { payment ->
         val clean = payment.month.trim().lowercase()
@@ -833,7 +826,7 @@ private fun IrregularPaymentsTab(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("${irregularPayments.size} unregelmäßige Zahlungen", fontSize = 17.sp, color = Ink, fontWeight = FontWeight.SemiBold)
-                    Text("$unpaidCount unbezahlt (in ${viewingDate.format(DateTimeFormatter.ofPattern("MMMM", Locale.GERMANY))})", fontSize = 13.sp, color = if (unpaidCount > 0) UnpaidTint else PaidTint)
+                    Text("$unpaidCount unbezahlt", fontSize = 13.sp, color = if (unpaidCount > 0) UnpaidTint else PaidTint)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onResetStatuses, enabled = hasPaid) {
@@ -880,7 +873,12 @@ private fun IrregularPaymentsTab(
                 }
             }
         } else {
-            items(irregularPayments.sortedBy { it.month }, key = { it.id }) { payment ->
+            items(
+                irregularPayments.sortedWith(
+                    compareBy({ monthSortIndex(it.month) }, { it.name }),
+                ),
+                key = { it.id },
+            ) { payment ->
                 val clean = payment.month.trim().lowercase()
                 val isPaid = if (clean == "unbekannt") payment.id in paidUnknownIds else payment.isPaid
                 IrregularPaymentTableRow(payment, isPaid, onToggleStatus, onEdit, onDelete)
@@ -1300,25 +1298,69 @@ private fun DropdownField(label: String, selected: String, options: List<String>
     }
 }
 
-private fun getMonthKey(viewingDate: LocalDate): String {
-    return viewingDate.format(DateTimeFormatter.ofPattern("MMMM", Locale.GERMANY)).lowercase()
+private fun migrateLegacyMonthStorage(context: Context) {
+    val prefs = context.getSharedPreferences("budget", Context.MODE_PRIVATE)
+    val today = LocalDate.now()
+
+    listOf("paidFixedCostsPerMonth", "paidUnknownPaymentsPerMonth").forEach { name ->
+        val stored = prefs.getString(name, null) ?: return@forEach
+        runCatching {
+            val source = JSONObject(stored)
+            val merged = linkedMapOf<String, MutableSet<Long>>()
+            for (oldKey in source.keys()) {
+                val newKey = migrateLegacyMonthKey(oldKey, today)
+                val set = merged.getOrPut(newKey) { mutableSetOf() }
+                val array = source.optJSONArray(oldKey) ?: continue
+                for (index in 0 until array.length()) {
+                    set.add(array.optLong(index))
+                }
+            }
+            val target = JSONObject()
+            merged.forEach { (key, set) ->
+                val array = JSONArray()
+                set.forEach { array.put(it) }
+                target.put(key, array)
+            }
+            if (target.toString() != source.toString()) {
+                prefs.edit().putString(name, target.toString()).apply()
+            }
+        }
+    }
+
+    val storedSalary = prefs.getString("paidSalaryMap", null) ?: return
+    runCatching {
+        val source = JSONObject(storedSalary)
+        val target = JSONObject()
+        for (oldKey in source.keys()) {
+            target.put(migrateLegacyMonthKey(oldKey, today), source.optBoolean(oldKey, false))
+        }
+        if (target.toString() != source.toString()) {
+            prefs.edit().putString("paidSalaryMap", target.toString()).apply()
+        }
+    }
 }
 
-private fun loadPaidFixedCostsMap(context: Context): Map<String, Set<Long>> {
-    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("paidFixedCostsPerMonth", null)
+private fun loadLongSetMap(context: Context, preferenceName: String): Map<String, Set<Long>> {
+    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE)
+        .getString(preferenceName, null)
         ?: return emptyMap()
-    val map = mutableMapOf<String, Set<Long>>()
-    val jsonObj = JSONObject(stored)
-    jsonObj.keys().forEach { monthKey ->
-        val jsonArray = jsonObj.getJSONArray(monthKey)
-        val set = mutableSetOf<Long>()
-        for (i in 0 until jsonArray.length()) {
-            set.add(jsonArray.getLong(i))
+    return runCatching {
+        val jsonObj = JSONObject(stored)
+        val map = mutableMapOf<String, Set<Long>>()
+        for (monthKey in jsonObj.keys()) {
+            val jsonArray = jsonObj.optJSONArray(monthKey) ?: continue
+            val set = mutableSetOf<Long>()
+            for (index in 0 until jsonArray.length()) {
+                set.add(jsonArray.optLong(index))
+            }
+            map[monthKey] = set
         }
-        map[monthKey] = set
-    }
-    return map
+        map
+    }.getOrDefault(emptyMap())
 }
+
+private fun loadPaidFixedCostsMap(context: Context): Map<String, Set<Long>> =
+    loadLongSetMap(context, "paidFixedCostsPerMonth")
 
 private fun savePaidFixedCostsMap(context: Context, map: Map<String, Set<Long>>) {
     val jsonObj = JSONObject()
@@ -1333,21 +1375,8 @@ private fun savePaidFixedCostsMap(context: Context, map: Map<String, Set<Long>>)
         .apply()
 }
 
-private fun loadPaidUnknownPaymentsMap(context: Context): Map<String, Set<Long>> {
-    val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("paidUnknownPaymentsPerMonth", null)
-        ?: return emptyMap()
-    val map = mutableMapOf<String, Set<Long>>()
-    val jsonObj = JSONObject(stored)
-    jsonObj.keys().forEach { monthKey ->
-        val jsonArray = jsonObj.getJSONArray(monthKey)
-        val set = mutableSetOf<Long>()
-        for (i in 0 until jsonArray.length()) {
-            set.add(jsonArray.getLong(i))
-        }
-        map[monthKey] = set
-    }
-    return map
-}
+private fun loadPaidUnknownPaymentsMap(context: Context): Map<String, Set<Long>> =
+    loadLongSetMap(context, "paidUnknownPaymentsPerMonth")
 
 private fun savePaidUnknownPaymentsMap(context: Context, map: Map<String, Set<Long>>) {
     val jsonObj = JSONObject()
@@ -1365,12 +1394,14 @@ private fun savePaidUnknownPaymentsMap(context: Context, map: Map<String, Set<Lo
 private fun loadPaidSalaryMap(context: Context): Map<String, Boolean> {
     val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("paidSalaryMap", null)
         ?: return emptyMap()
-    val map = mutableMapOf<String, Boolean>()
-    val jsonObj = JSONObject(stored)
-    jsonObj.keys().forEach { monthKey ->
-        map[monthKey] = jsonObj.getBoolean(monthKey)
-    }
-    return map
+    return runCatching {
+        val map = mutableMapOf<String, Boolean>()
+        val jsonObj = JSONObject(stored)
+        for (monthKey in jsonObj.keys()) {
+            map[monthKey] = jsonObj.optBoolean(monthKey, false)
+        }
+        map
+    }.getOrDefault(emptyMap())
 }
 
 private fun savePaidSalaryMap(context: Context, map: Map<String, Boolean>) {
@@ -1386,36 +1417,34 @@ private fun savePaidSalaryMap(context: Context, map: Map<String, Boolean>) {
 
 private fun toggleFixedCostPaid(context: Context, costId: Long, viewingDate: LocalDate, isPaid: Boolean): Map<String, Set<Long>> {
     val map = loadPaidFixedCostsMap(context).toMutableMap()
-    val monthKey = getMonthKey(viewingDate)
-    val set = map[monthKey]?.toMutableSet() ?: mutableSetOf()
+    val key = monthKey(viewingDate)
+    val set = map[key]?.toMutableSet() ?: mutableSetOf()
     if (isPaid) set.add(costId) else set.remove(costId)
-    map[monthKey] = set
+    map[key] = set
     savePaidFixedCostsMap(context, map)
     return map
 }
 
 private fun resetFixedCostsPaid(context: Context, viewingDate: LocalDate): Map<String, Set<Long>> {
     val map = loadPaidFixedCostsMap(context).toMutableMap()
-    val monthKey = getMonthKey(viewingDate)
-    map[monthKey] = emptySet()
+    map[monthKey(viewingDate)] = emptySet()
     savePaidFixedCostsMap(context, map)
     return map
 }
 
 private fun toggleUnknownPaymentPaid(context: Context, paymentId: Long, viewingDate: LocalDate, isPaid: Boolean): Map<String, Set<Long>> {
     val map = loadPaidUnknownPaymentsMap(context).toMutableMap()
-    val monthKey = getMonthKey(viewingDate)
-    val set = map[monthKey]?.toMutableSet() ?: mutableSetOf()
+    val key = monthKey(viewingDate)
+    val set = map[key]?.toMutableSet() ?: mutableSetOf()
     if (isPaid) set.add(paymentId) else set.remove(paymentId)
-    map[monthKey] = set
+    map[key] = set
     savePaidUnknownPaymentsMap(context, map)
     return map
 }
 
 private fun toggleSalaryReceived(context: Context, viewingDate: LocalDate, received: Boolean): Map<String, Boolean> {
     val map = loadPaidSalaryMap(context).toMutableMap()
-    val monthKey = getMonthKey(viewingDate)
-    map[monthKey] = received
+    map[monthKey(viewingDate)] = received
     savePaidSalaryMap(context, map)
     return map
 }
@@ -1423,46 +1452,52 @@ private fun toggleSalaryReceived(context: Context, viewingDate: LocalDate, recei
 private fun loadFixedCosts(context: Context): List<FixedCost> {
     val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("fixedCosts", null)
         ?: return DefaultFixedCosts
-    val json = JSONArray(stored)
-    return List(json.length()) { index ->
-        val item = json.getJSONObject(index)
-        FixedCost(
-            id = item.getLong("id"),
-            paymentType = item.getString("paymentType"),
-            name = item.getString("name"),
-            amount = item.getDouble("amount"),
-            isPaid = item.getBoolean("isPaid"),
-            dueDay = item.getInt("dueDay"),
-        )
-    }
+    return runCatching {
+        val json = JSONArray(stored)
+        List(json.length()) { index ->
+            val item = json.getJSONObject(index)
+            FixedCost(
+                id = item.optLong("id"),
+                paymentType = item.optString("paymentType", PaymentTypes.first()),
+                name = item.optString("name"),
+                amount = item.optDouble("amount", 0.0),
+                isPaid = item.optBoolean("isPaid", false),
+                dueDay = item.optInt("dueDay", 1),
+            )
+        }
+    }.getOrDefault(emptyList())
 }
 
 private fun loadIrregularPayments(context: Context): List<IrregularPayment> {
     val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE).getString("irregularPayments", null)
         ?: return emptyList()
-    val json = JSONArray(stored)
-    return List(json.length()) { index ->
-        val item = json.getJSONObject(index)
-        IrregularPayment(
-            id = item.getLong("id"),
-            month = item.optString("month", "unbekannt"),
-            paymentType = item.getString("paymentType"),
-            name = item.getString("name"),
-            amount = item.getDouble("amount"),
-            isPaid = item.optBoolean("isPaid", false),
-        )
-    }
+    return runCatching {
+        val json = JSONArray(stored)
+        List(json.length()) { index ->
+            val item = json.getJSONObject(index)
+            IrregularPayment(
+                id = item.optLong("id"),
+                month = item.optString("month", "unbekannt"),
+                paymentType = item.optString("paymentType", PaymentTypes.first()),
+                name = item.optString("name"),
+                amount = item.optDouble("amount", 0.0),
+                isPaid = item.optBoolean("isPaid", false),
+            )
+        }
+    }.getOrDefault(emptyList())
 }
 
 private fun loadDashboardSettings(context: Context): DashboardSettings {
     val stored = context.getSharedPreferences("budget", Context.MODE_PRIVATE)
         .getString("dashboardSettings", null)
         ?: return DashboardSettings()
-    val json = JSONObject(stored)
-    return DashboardSettings(
-        balance = json.getDouble("balance"),
-        minimumBuffer = json.getDouble("minimumBuffer"),
-    )
+    return runCatching {
+        val json = JSONObject(stored)
+        DashboardSettings(
+            balance = json.optDouble("balance", 0.0),
+            minimumBuffer = json.optDouble("minimumBuffer", 0.0),
+        )
+    }.getOrDefault(DashboardSettings())
 }
 
 private fun saveDashboardSettings(context: Context, settings: DashboardSettings) {

@@ -50,14 +50,14 @@ jobs:
           fi
 
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/budget2-release.jks"
-          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/budget2-release.jks" >> "$GITHUB_ENV"
+          {
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/budget2-release.jks"
+            echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
+            echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS"
+            echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
 
       - name: Release-APK erstellen
-        env:
-          ANDROID_KEYSTORE_PATH: ${{ env.ANDROID_KEYSTORE_PATH }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease
 
       - name: APK hochladen
