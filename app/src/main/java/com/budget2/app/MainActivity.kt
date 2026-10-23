@@ -7,6 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,12 +43,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
@@ -58,11 +58,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.NumberFormat
@@ -190,15 +193,42 @@ private fun FixedCostsApp(context: Context) {
                         Text(if (viewingMonthOffset == 0) "Nächster Monat ➔" else "◀ Aktueller Monat", fontSize = 11.sp)
                     }
                 }
-                TabRow(selectedTabIndex = selectedTab, containerColor = Color.White) {
-                    listOf("Dashboard", "Fixkosten", "Unregelmäßig", "Settings").forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTab == index,
-                            onClick = { selectTab(index) },
-                            text = { Text(title) },
-                        )
+                Row(Modifier.fillMaxWidth().background(Color.White)) {
+                    listOf("Dashboard", "Fixkosten", "Unregel-\nmässig", "Settings").forEachIndexed { index, title ->
+                        val selected = selectedTab == index
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .selectable(
+                                    selected = selected,
+                                    onClick = { selectTab(index) },
+                                    role = Role.Tab,
+                                ),
+                        ) {
+                            Box(
+                                Modifier.fillMaxWidth().height(48.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    title,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                    fontSize = 14.sp,
+                                    lineHeight = 16.sp,
+                                    color = if (selected) Forest else Muted,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                )
+                            }
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(2.dp)
+                                    .background(if (selected) Forest else Color.Transparent),
+                            )
+                        }
                     }
                 }
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Paper))
             }
         },
     ) { padding ->
@@ -269,6 +299,7 @@ private fun FixedCostsApp(context: Context) {
                     dashboardSettings = updated
                     saveDashboardSettings(context, updated)
                 },
+                onGoToDashboard = { selectTab(0) },
                 onAdd = {
                     editingCost = null
                     showEditor = true
@@ -1070,6 +1101,7 @@ private fun SettingsTab(
     dashboardSettings: DashboardSettings,
     modifier: Modifier = Modifier,
     onSaveDashboardSettings: (DashboardSettings) -> Unit,
+    onGoToDashboard: () -> Unit,
     onAdd: () -> Unit,
     onEdit: (FixedCost) -> Unit,
     onDelete: (FixedCost) -> Unit,
@@ -1080,7 +1112,11 @@ private fun SettingsTab(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            DashboardSettingsCard(dashboardSettings, onSaveDashboardSettings)
+            DashboardSettingsCard(
+                settings = dashboardSettings,
+                onSave = onSaveDashboardSettings,
+                onSaved = onGoToDashboard,
+            )
         }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1147,6 +1183,7 @@ private fun SettingsTab(
 private fun DashboardSettingsCard(
     settings: DashboardSettings,
     onSave: (DashboardSettings) -> Unit,
+    onSaved: () -> Unit,
 ) {
     var balance by remember(settings) { mutableStateOf(settings.balance.toInt().toString()) }
     var minimumBuffer by remember(settings) { mutableStateOf(settings.minimumBuffer.toInt().toString()) }
@@ -1154,6 +1191,13 @@ private fun DashboardSettingsCard(
     val parsedBalance = balance.trim().toIntOrNull()?.toDouble() ?: 0.0
     val parsedBuffer = minimumBuffer.trim().toIntOrNull()?.toDouble() ?: 0.0
     val valid = parsedBuffer >= 0
+
+    LaunchedEffect(showSavedMessage) {
+        if (showSavedMessage) {
+            delay(600)
+            onSaved()
+        }
+    }
 
     Card(
         shape = RoundedCornerShape(18.dp),
