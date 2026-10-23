@@ -127,6 +127,7 @@ internal data class DashboardSummary(
     val daysRemaining: Int,
     val paidFixedCosts: Double,
     val remainingFixedCosts: Double,
+    val totalCosts: Double,
     val dailyBudgetToday: Double,
     val dailyBudgetTomorrow: Double,
     val bufferToday: Double,
@@ -188,6 +189,7 @@ internal fun calculateDashboardSummary(
         daysRemaining = daysRemaining,
         paidFixedCosts = paid,
         remainingFixedCosts = remaining,
+        totalCosts = total,
         dailyBudgetToday = dailyBudgetToday,
         dailyBudgetTomorrow = dailyBudgetTomorrow,
         bufferToday = bufferToday,
@@ -231,6 +233,17 @@ internal fun paymentTypeTotals(
             PaymentTypeTotal(paymentType, paid + unpaid, paid, unpaid)
         }
     }
+}
+
+/**
+ * Percentages that always add up to 100. Rounding the paid share and deriving the
+ * unpaid share avoids truncation errors such as 98 % + 1 % = 99 %.
+ */
+internal fun paymentStatusPercentages(paid: Double, unpaid: Double): Pair<Int, Int> {
+    val total = paid + unpaid
+    if (total <= 0.0) return 0 to 0
+    val paidPercent = (paid / total * 100).roundToInt().coerceIn(0, 100)
+    return paidPercent to (100 - paidPercent)
 }
 
 internal fun updateFixedCostStatus(

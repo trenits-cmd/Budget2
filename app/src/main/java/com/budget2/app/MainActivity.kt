@@ -458,9 +458,9 @@ private fun DashboardTab(
         today = LocalDate.now(),
         viewingDate = viewingDate,
     )
-    val total = summary.paidFixedCosts + summary.remainingFixedCosts
+    val total = summary.totalCosts
     val paid = summary.paidFixedCosts
-    val unpaid = summary.remainingFixedCosts
+    val unpaid = (total - paid).coerceAtLeast(0.0)
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -611,8 +611,7 @@ private fun DashboardTab(
                         Text("Zahlungsstatus", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
                         Text("Anteil an den gesamten Kosten", fontSize = 12.sp, color = Muted)
                     }
-                    StatusBar("Bezahlt", paid, total, PaidTint)
-                    StatusBar("Unbezahlt", unpaid, total, UnpaidTint)
+                    PaymentStatusBar(paid, unpaid)
                 }
             }
         }
@@ -646,8 +645,7 @@ private fun DashboardSummary(label: String, value: String, modifier: Modifier, t
 
 @Composable
 private fun PaymentTypeBar(total: PaymentTypeTotal) {
-    val paidPercent = if (total.total > 0) (total.paid / total.total * 100).toInt() else 0
-    val unpaidPercent = if (total.total > 0) (total.unpaid / total.total * 100).toInt() else 0
+    val (paidPercent, unpaidPercent) = paymentStatusPercentages(total.paid, total.unpaid)
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -686,22 +684,59 @@ private fun PaymentTypeBar(total: PaymentTypeTotal) {
 }
 
 @Composable
-private fun StatusBar(label: String, amount: Double, total: Double, tint: Color) {
-    val fraction = if (total > 0) (amount / total).toFloat().coerceIn(0f, 1f) else 0f
-    val percent = if (total > 0) (amount / total * 100).toInt() else 0
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, modifier = Modifier.weight(1f), fontSize = 13.sp, color = Ink, fontWeight = FontWeight.Medium)
-            Text("$percent% · ${money(amount)}", fontSize = 13.sp, color = tint, fontWeight = FontWeight.SemiBold)
+private fun PaymentStatusBar(paid: Double, unpaid: Double) {
+    val (paidPercent, unpaidPercent) = paymentStatusPercentages(paid, unpaid)
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Bezahlt", fontSize = 11.sp, color = Muted)
+                Text(
+                    "$paidPercent% · ${money(paid)}",
+                    fontSize = 14.sp,
+                    color = PaidTint,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
+            Column(
+                Modifier.weight(1f),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text("Unbezahlt", fontSize = 11.sp, color = Muted)
+                Text(
+                    "$unpaidPercent% · ${money(unpaid)}",
+                    fontSize = 14.sp,
+                    color = UnpaidTint,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
         }
-        Box(Modifier.fillMaxWidth().height(16.dp).clip(RoundedCornerShape(99.dp)).background(Paper)) {
-            if (fraction > 0f) {
+        Row(
+            Modifier.fillMaxWidth().height(18.dp).clip(RoundedCornerShape(99.dp)).background(Paper),
+        ) {
+            if (paid > 0.0) {
                 Box(
-                    Modifier.fillMaxWidth(fraction).height(16.dp).clip(RoundedCornerShape(99.dp)).background(tint),
+                    Modifier.weight(paid.toFloat()).height(18.dp).background(PaidTint),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (fraction >= 0.15f) {
-                        Text("$percent% (${money(amount)})", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+                    if (paidPercent >= 20) {
+                        Text("$paidPercent%", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            if (unpaid > 0.0) {
+                Box(
+                    Modifier.weight(unpaid.toFloat()).height(18.dp).background(UnpaidTint),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (unpaidPercent >= 20) {
+                        Text("$unpaidPercent%", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             }

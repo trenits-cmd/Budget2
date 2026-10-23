@@ -80,6 +80,7 @@ class BudgetModelsTest {
         assertEquals(17, summary.daysRemaining)
         assertEquals(600.0, summary.paidFixedCosts, 0.0)
         assertEquals(25.0, summary.remainingFixedCosts, 0.0)
+        assertEquals(624.99, summary.totalCosts, 0.001)
         assertEquals(51.0, summary.dailyBudgetToday, 0.0)
         assertEquals(55.0, summary.dailyBudgetTomorrow, 0.0)
         assertEquals(-45.0, summary.bufferToday, 0.0)
@@ -107,6 +108,16 @@ class BudgetModelsTest {
 
         assertEquals(700.0, summary.paidFixedCosts, 0.0)
         assertEquals(50.0, summary.remainingFixedCosts, 0.0)
+        assertEquals(750.0, summary.totalCosts, 0.0)
+    }
+
+    @Test
+    fun paymentStatusPercentages_alwaysAddUpTo100() {
+        assertEquals(98 to 2, paymentStatusPercentages(1649.88, 27.0))
+        assertEquals(94 to 6, paymentStatusPercentages(461.88, 27.0))
+        assertEquals(100 to 0, paymentStatusPercentages(99.99, 0.01))
+        assertEquals(0 to 100, paymentStatusPercentages(0.0, 10.0))
+        assertEquals(0 to 0, paymentStatusPercentages(0.0, 0.0))
     }
 
     @Test
