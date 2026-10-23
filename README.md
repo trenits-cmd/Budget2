@@ -1,142 +1,82 @@
-<p align="center">
-  <img src="docs/logo.png" width="112" alt="Budget App Logo" />
-</p>
-
 # Budget2
 
 Budget2 ist eine native Android-App zur Verwaltung monatlicher Fixkosten, unregelmäßiger Zahlungen und des verfügbaren Monatsbudgets. Die Oberfläche ist mit Kotlin und Jetpack Compose umgesetzt; alle Daten bleiben lokal auf dem Gerät.
 
 ## Funktionen
 
-- **Dashboard:** Gesamtkosten, bezahlte und offene Beträge, Gehaltseingang, Tagesbudget für heute und morgen, Kontostand, Mindestpuffer, Soll-Kontostand-Prognosen sowie Anteile nach Zahlungsart und Status.
-- **Fixkosten:** Wiederkehrende Zahlungen mit Zahlungsart, Zweck, Betrag, Fälligkeitstag und Bezahlstatus. Zahlungen für den angezeigten Monat werden automatisch mit aufgeführt.
-- **Unregelmäßige Zahlungen:** Zahlungen mit festem Monat oder dem Status **„unbekannt“**. Sie erscheinen zusätzlich im Fixkosten-Tab und fließen in das Monatsbudget ein.
-- **Settings:** Kontostand, Mindestpuffer, Anlegen, Bearbeiten und Löschen aller Fixkosten-Zwecke.
-- **Monatsansicht:** Umschalten zwischen aktuellem und nächstem Monat.
-- **Status pro Monat und Jahr:** Bezahlte Fixkosten, unbekannte Zahlungen und Gehaltseingang werden getrennt für jeden Monat gespeichert (Schlüsselformat `yyyy-MM`). Ältere, monatsnamenbasierte Einträge werden beim Start automatisch übernommen.
-- **Zurücksetzen:** Alle Zahlungen des angezeigten Monats mit einem Tap wieder auf „unbezahlt“ setzen.
-- **Offline & lokal:** Keine Internet-Berechtigung, kein Konto, keine Cloud-Anbindung. Die Speicherung erfolgt in `SharedPreferences`.
-- **Adaptives App-Icon:** Eigenes Logo passend zur Farbwelt des Dashboards, inklusive runder und monochromer Variante.
+- **Dashboard:** Gesamtkosten, bezahlte und offene Beträge, Gehaltseingang, Tagesbudget für heute und morgen, Kontostand, Mindestpuffer, Soll-Kontostand-Prognosen sowie Anteile nach Zahlungsart und Status. Der Zahlungsstatus wird als gestapelter Bezahlt/Unbezahlt-Balken dargestellt.
+- **Fixkosten:** Wiederkehrende Zahlungen mit Zahlungsart, Zweck, Betrag, Fälligkeitstag (Tag im Monat oder Tag vor Monatsende) und Bezahlstatus. Zahlungen für den angezeigten Monat werden automatisch mit aufgeführt.
+- **Unregelmäßige Zahlungen:** Zahlungen mit festem Monat oder dem Status **"unbekannt"**. Sie erscheinen zusätzlich im Fixkosten-Tab und fließen in das Monatsbudget ein.
+- **Settings:** Kontostand, Mindestpuffer und Verwaltung aller Fixkosten-Zwecke.
+- **Monatsansicht:** Umschalten zwischen aktuellem und nächstem Monat. Die App merkt sich die Tab-Historie und behält den ausgewählten Monat beim Zurücknavigieren im Blick.
+- **Zurück-Navigation:** Die System-Zurücktaste navigiert erst innerhalb der Tabs und setzt anschließend beim Verlassen des "Nächster Monat"-Zustands in den aktuellen Monat zurück, bevor sie die App minimiert.
+- **Status pro Monat und Jahr:** Bezahlte Fixkosten, unbekannte Zahlungen und Gehaltseingang werden getrennt für jeden Monat gespeichert (Schlüsselformat `yyyy-MM`).
 
-## Voraussetzungen
+## Architektur
 
-| Werkzeug | Version |
-| --- | --- |
-| Android Studio | mit Unterstützung für AGP 8.2 |
-| JDK | 17 |
-| Android SDK | Platform 34 (`compileSdk`/`targetSdk`) |
-| Gradle | 8.9 (über den Wrapper) |
-| Kotlin | 1.9.22 |
-| Compose BOM | 2024.02.00 |
-| Mindest-Android | 6.0 (API 23) |
+- `com.budget2.app` enthält nur das Paket der App.
+- `BudgetModels.kt`: Domänenmodelle, Berechnungen (`calculateDashboardSummary`, `paymentStatusPercentages`), Hilfsfunktionen und ID-Generierung.
+- `BudgetRepository.kt`: Alle `SharedPreferences`-Zugriffe, JSON-(De)Serialisierung, Legacy-Migration und Initial-Seeding der Standard-Fixkosten beim ersten Start.
+- `BudgetFormatting.kt`: Währungsformatierung, Betragseingabe und Labels für den Fälligkeitstag.
+- `BudgetTheme.kt`: App-Farben und Theme.
+- `MainActivity.kt`: Jetpack-Compose-UI, Navigation, Dialoge und Interaktionen.
 
-## Bauen
+## Entwicklung
 
-Die Gradle-Synchronisierung in Android Studio ausführen oder direkt über die Konsole bauen.
+### Voraussetzungen
+- Android Studio mit JBR 17
+- Android SDK (z. B. `C:\Users\<User>\AppData\Local\Android\Sdk`)
+- Für lokale Builds: `JAVA_HOME=C:\Program Files\Android\Android Studio\jbr`, `ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk`
 
-### Debug-APK
-
-```sh
-./gradlew assembleDebug
+### Build
+Debug-APK:
+```bash
+gradlew.bat :app:assembleDebug
 ```
 
-Unter Windows:
-
-```powershell
-.\gradlew.bat assembleDebug
+Release-APK (mit lokal konfiguriertem Keystore falls gesetzt, sonst mit dem Debug-Key signiert):
+```bash
+gradlew.bat :app:assembleRelease
 ```
 
-Die APK liegt danach unter `app/build/outputs/apk/debug/app-debug.apk`.
-
-### Schnelltest auf dem Handy
-
-Voraussetzung: Das Gerät ist per USB oder WLAN-ADB verbunden.
-
-```powershell
-.\scripts\Test-BudgetOnPhone.ps1
+Unit-Tests:
+```bash
+gradlew.bat :app:testDebugUnitTest
 ```
 
-Das Skript baut die Debug-APK, installiert sie mit `adb install -r` und startet die App. Die App-Daten bleiben dabei erhalten. `JAVA_HOME` und `ANDROID_HOME` werden automatisch gesetzt, wenn Android Studio und das SDK am Standardort installiert sind.
+### Testen auf dem physischen Smartphone
+Auf dem Desktop liegt der Shortcut **Budget2 Handy-Test.lnk** (Icon `docs/logo.ico`). Das Skript `scripts/Test-BudgetOnPhone.ps1` führt aus:
+1. Debug-APK bauen
+2. Auf verbundenem Gerät installieren (`adb install -r`, bestehende App-Daten bleiben erhalten, wenn der Build mit dem gleichen Debug-Key signiert ist)
+3. App starten
 
-### Tests und Lint
+ADB-Gerät muss verbunden und autorisiert sein. Der Shortcut funktioniert direkt ohne manuelle Befehle.
 
-```sh
-./gradlew testDebugUnitTest
-./gradlew lintDebug
-```
+### Releases
+- Aktueller Test-Release: [Budget2 v1.3](https://github.com/trenits-cmd/Budget2/releases/tag/v1.3) (`Budget2-1.3-release.apk`). Release-Builds werden lokal mit dem Debug-Key signiert, bis ein stabiler Release-Keystore konfiguriert ist. Updates funktionieren nur, wenn derselbe Signaturschlüssel verwendet wird.
+- Der GitHub-Workflow `.github/workflows/build-apk.yml` baut bei jedem Push auf `main` ein Release-APK und lädt es als Artifact hoch.
 
-Die Unit-Tests prüfen unter anderem die Dashboard-Berechnungen, die Monatszuordnung und die Migration alter Monatsschlüssel.
+## Optimierungstipps
 
-### Release-APK
+### Performance
+- **Listen optimieren:** `LazyColumn` wird bereits genutzt; bei sehr großen Listen können `key` stabiler gesetzt und `contentType` ergänzt werden.
+- **Zustand reduzieren:** Aktuell wird viel Zustand direkt in `MainActivity` gehalten. Ein `ViewModel` + `StateFlow` würde Konfigurationsänderungen robuster machen und Logik testbarer halten.
+- **Repository-Migration:** `BudgetRepository` trennt bereits Persistenz; bei wachsenden Daten könnten Room oder DataStore erwogen werden (aktuell reicht `SharedPreferences` für diese Appgröße).
 
-```sh
-./gradlew assembleRelease
-```
+### UX/UI
+- **Barrierefreiheit:** Fehlende `contentDescription` an manchen Icons ergänzen, Switches mit Labels verknüpfen und Kontrast prüfen.
+- **Eingabevalidierung:** Das neue Monatsende-Toggle für Fälligkeitstage verbessert die UX. Für Beträge könnten Live-Fehlermeldungen und eine Währungsvorschau ergänzt werden.
+- **Responsives Layout:** Auf sehr kleinen oder großen Displays könnten Abstände und Schriftgrößen leicht angepasst werden.
+- **Rotation/Zustand:** Tab, Monat und Dialoge überleben Rotation bereits durch `rememberSaveable`; komplexere Dialogzustände könnten bei Bedarf ebenfalls gespeichert werden.
 
-Ausgabe: `app/build/outputs/apk/release/app-release.apk`.
+### Code-Struktur & Qualität
+- **UI-Aufteilung:** Für noch bessere Lesbarkeit könnten `DashboardTab`, `FixedCostsTab`, `IrregularPaymentsTab` und `SettingsTab` in eigene Dateien ausgelagert werden.
+- **Reine Funktionen testen:** Neben Modellen wurden ID-Generierung und Monatsreset getestet. Persistenz-Logik lässt sich mit Robolectric oder `SharedPreferences`-Fakes weiter abdecken.
+- **Formatierung/Encoding:** Die UI bleibt Deutsch; bei konsistenter UTF-8-Pflege bleiben Sonderzeichen stabil.
+- **Robustere ID-Vergabe:** Durch Berücksichtigung reservierter IDs aus gelöschten Einträgen wird verhindert, dass neue Einträge alten Bezahlstatus erben.
 
-Für eine eigene Signatur müssen alle vier Umgebungsvariablen gesetzt sein:
-
-| Variable | Inhalt |
-| --- | --- |
-| `ANDROID_KEYSTORE_PATH` | Pfad zur `.jks`-Datei |
-| `ANDROID_KEYSTORE_PASSWORD` | Passwort des Keystores |
-| `ANDROID_KEY_ALIAS` | Alias des Schlüssels |
-| `ANDROID_KEY_PASSWORD` | Passwort des Schlüssels |
-
-Fehlt die Konfiguration vollständig, wird die Release-APK mit dem Debug-Schlüssel signiert. Das ist nur zum lokalen Testen geeignet; ein späterer Wechsel des Signaturschlüssels verhindert Updates über eine bereits installierte APK. Sind nur einzelne Variablen gesetzt, bricht der Build mit einer klaren Fehlermeldung ab.
-
-### GitHub Actions
-
-Der Workflow **Build Android APK** (`.github/workflows/build-apk.yml`) baut bei jedem Push auf `main` und über **Run workflow** eine Release-APK. Die vier Signaturwerte können als Repository-Secrets hinterlegt werden (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`). Ohne Secrets wird die APK mit dem temporären Debug-Schlüssel des Runners signiert. Das Artefakt heißt `app-release`.
-
-## Projektstruktur
-
-```text
-Budget2/
-├─ app/src/main/java/com/budget2/app/
-│  ├─ MainActivity.kt      # Compose-Oberfläche, Dialoge, Persistenz
-│  └─ BudgetModels.kt      # Datenmodelle, Monatslogik, Berechnungen
-├─ app/src/main/res/
-│  ├─ drawable/            # Logo und adaptive Icon-Ebenen
-│  ├─ mipmap-*/            # Legacy-Launcher-Icons
-│  └─ values/              # App-Name, Farben, Theme
-├─ app/src/test/           # JVM-Unit-Tests
-├─ docs/logo.png           # Logo-Vorschau für diese README
-└─ .github/workflows/      # Release-APK über GitHub Actions
-```
-
-## Datenspeicherung
-
-Alle Daten liegen im privaten `SharedPreferences`-File `budget`:
-
-| Schlüssel | Inhalt |
-| --- | --- |
-| `fixedCosts` | Liste der Fixkosten als JSON |
-| `irregularPayments` | Liste der unregelmäßigen Zahlungen als JSON |
-| `dashboardSettings` | Kontostand und Mindestpuffer |
-| `paidFixedCostsPerMonth` | Bezahlte Fixkosten pro Monat (`yyyy-MM`) |
-| `paidUnknownPaymentsPerMonth` | Bezahlte „unbekannte“ Zahlungen pro Monat |
-| `paidSalaryMap` | Gehaltseingang pro Monat |
-
-Beim ersten Start werden 17 Fixkosten aus `DefaultFixedCosts` angelegt. Diese Einträge dienen als Startbestand und können in den Settings bearbeitet oder gelöscht werden. Die App nutzt `allowBackup`; abhängig von den Geräteeinstellungen kann Android die Daten daher in ein Cloud-Backup aufnehmen.
-
-## Berechnungen im Dashboard
-
-- **Stichtag:** 27. Februar im Februar, sonst der dritte Tag vor Monatsende (z. B. 28. Oktober).
-- **Verbleibende Tage:** Differenz zwischen heutigem Datum und Stichtag.
-- **Tagesbudget:** `(Kontostand − offene Kosten − Mindestpuffer) / verbleibende Tage`, kaufmännisch auf ganze Euro gerundet. Für morgen wird ein Tag weniger angesetzt.
-- **Puffer:** `Kontostand − (60 € × verbleibende Tage + offene Kosten)`.
-- **Soll-Kontostand:** `60 € × verbleibende Tage + Mindestpuffer + offene Kosten`; für morgen entsprechend ein Tag weniger.
-- **Offene Kosten:** Summe aller Fixkosten und der für den Monat relevanten unregelmäßigen Zahlungen minus bereits bezahlter Beträge, gerundet auf ganze Euro.
-
-Das Tagesziel von 60 € ist als `DAILY_TARGET` in `BudgetModels.kt` hinterlegt.
-
-## Bekannte Einschränkungen
-
-- Unregelmäßige Zahlungen speichern nur einen Monatsnamen, kein Jahr. Eine Zahlung für „Oktober“ erscheint daher in jedem Oktober; ihr Bezahlstatus gilt monatsübergreifend.
-- Der Bezahlstatus unregelmäßiger Zahlungen mit festem Monat ist nicht jahresabhängig. Nur Fixkosten, „unbekannte“ Zahlungen und das Gehalt werden pro `yyyy-MM` gespeichert.
-- „Unbekannt“ Zahlungen wirken nur im aktuell angezeigten Monat auf das Budget. Beim Blick auf den nächsten Monat werden sie nicht in die Prognose eingerechnet.
-- Der Schalter **Gehaltseingang** speichert nur den Status für den Monat. Er verändert die Kontostands- und Budgetberechnungen derzeit nicht; das Gehalt muss weiterhin im Kontostand berücksichtigt werden.
-- Die Monatsansicht bietet nur „aktueller Monat“ und „nächster Monat“.
-- Die App ist auf Deutsch und auf den Euro (Locale `de_DE`) ausgelegt.
+### Zusätzliche Features
+- **Exporte/Backups:** JSON-Export/Import der Daten für Sicherung oder Gerätewechsel.
+- **Wiederkehrende Budgets:** Erinnerungen für offene Zahlungen oder Widgets für Tagesbudget.
+- **Mehrjährige Ansicht:** Da Zahlungen pro `yyyy-MM` gespeichert werden, ließe sich eine Jahresübersicht leicht ergänzen.
+- **Kategorien/Tags:** Zusätzliche Filterung nach Kategorie oder Projekt.
