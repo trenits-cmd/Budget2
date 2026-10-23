@@ -48,6 +48,16 @@ Unter Windows:
 
 Die APK liegt danach unter `app/build/outputs/apk/debug/app-debug.apk`.
 
+### Schnelltest auf dem Handy
+
+Voraussetzung: Das Gerät ist per USB oder WLAN-ADB verbunden.
+
+```powershell
+.\scripts\Test-BudgetOnPhone.ps1
+```
+
+Das Skript baut die Debug-APK, installiert sie mit `adb install -r` und startet die App. Die App-Daten bleiben dabei erhalten. `JAVA_HOME` und `ANDROID_HOME` werden automatisch gesetzt, wenn Android Studio und das SDK am Standardort installiert sind.
+
 ### Tests und Lint
 
 ```sh
