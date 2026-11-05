@@ -46,6 +46,10 @@ internal class BudgetRepository(context: Context) {
     }
 
     fun saveFixedCosts(fixedCosts: List<FixedCost>) {
+        preferences.edit().putString(KEY_FIXED_COSTS, fixedCostsToJson(fixedCosts)).apply()
+    }
+
+    private fun fixedCostsToJson(fixedCosts: List<FixedCost>): String {
         val json = JSONArray()
         fixedCosts.forEach { cost ->
             json.put(
@@ -59,7 +63,7 @@ internal class BudgetRepository(context: Context) {
                 },
             )
         }
-        preferences.edit().putString(KEY_FIXED_COSTS, json.toString()).apply()
+        return json.toString()
     }
 
     fun loadIrregularPayments(): List<IrregularPayment> {
@@ -81,6 +85,10 @@ internal class BudgetRepository(context: Context) {
     }
 
     fun saveIrregularPayments(payments: List<IrregularPayment>) {
+        preferences.edit().putString(KEY_IRREGULAR_PAYMENTS, irregularPaymentsToJson(payments)).apply()
+    }
+
+    private fun irregularPaymentsToJson(payments: List<IrregularPayment>): String {
         val json = JSONArray()
         payments.forEach { payment ->
             json.put(
@@ -94,7 +102,7 @@ internal class BudgetRepository(context: Context) {
                 },
             )
         }
-        preferences.edit().putString(KEY_IRREGULAR_PAYMENTS, json.toString()).apply()
+        return json.toString()
     }
 
     fun loadDashboardSettings(): DashboardSettings {
@@ -110,12 +118,14 @@ internal class BudgetRepository(context: Context) {
     }
 
     fun saveDashboardSettings(settings: DashboardSettings) {
-        val json = JSONObject().apply {
+        preferences.edit().putString(KEY_DASHBOARD_SETTINGS, settingsToJson(settings)).apply()
+    }
+
+    private fun settingsToJson(settings: DashboardSettings): String =
+        JSONObject().apply {
             put(KEY_BALANCE, settings.balance)
             put(KEY_MINIMUM_BUFFER, settings.minimumBuffer)
-        }
-        preferences.edit().putString(KEY_DASHBOARD_SETTINGS, json.toString()).apply()
-    }
+        }.toString()
 
     fun loadPaidFixedCostsMap(): Map<String, Set<Long>> =
         loadLongSetMap(KEY_PAID_FIXED_COSTS)
@@ -142,10 +152,13 @@ internal class BudgetRepository(context: Context) {
     }
 
     fun savePaidSalaryMap(map: Map<String, Boolean>) {
-        val json = JSONObject()
-        map.forEach { (month, received) -> json.put(month, received) }
-        preferences.edit().putString(KEY_PAID_SALARY, json.toString()).apply()
+        preferences.edit().putString(KEY_PAID_SALARY, salaryMapToJson(map)).apply()
     }
+
+    private fun salaryMapToJson(map: Map<String, Boolean>): String =
+        JSONObject().apply {
+            map.forEach { (month, received) -> put(month, received) }
+        }.toString()
 
     fun toggleFixedCostPaid(
         costId: Long,
@@ -210,14 +223,17 @@ internal class BudgetRepository(context: Context) {
     }
 
     private fun saveLongSetMap(preferenceName: String, map: Map<String, Set<Long>>) {
-        val json = JSONObject()
-        map.forEach { (month, ids) ->
-            val array = JSONArray()
-            ids.forEach { array.put(it) }
-            json.put(month, array)
-        }
-        preferences.edit().putString(preferenceName, json.toString()).apply()
+        preferences.edit().putString(preferenceName, longSetMapToJson(map)).apply()
     }
+
+    private fun longSetMapToJson(map: Map<String, Set<Long>>): String =
+        JSONObject().apply {
+            map.forEach { (month, ids) ->
+                val array = JSONArray()
+                ids.forEach { array.put(it) }
+                put(month, array)
+            }
+        }.toString()
 
     /** Reads every stored dataset so it can be written to a CSV backup file. */
     fun exportBackup(): BudgetBackup = BudgetBackup(
@@ -229,14 +245,20 @@ internal class BudgetRepository(context: Context) {
         settings = loadDashboardSettings(),
     )
 
-    /** Replaces every stored dataset with the content of an imported backup. */
+    /**
+     * Replaces every stored dataset with the content of an imported backup.
+     * All six datasets are written through one editor, so the app never keeps a
+     * half-imported state if a single write fails.
+     */
     fun importBackup(backup: BudgetBackup) {
-        saveFixedCosts(backup.fixedCosts)
-        saveIrregularPayments(backup.irregularPayments)
-        savePaidFixedCostsMap(backup.paidFixedCosts)
-        savePaidUnknownPaymentsMap(backup.paidUnknownPayments)
-        savePaidSalaryMap(backup.paidSalary)
-        saveDashboardSettings(backup.settings)
+        preferences.edit()
+            .putString(KEY_FIXED_COSTS, fixedCostsToJson(backup.fixedCosts))
+            .putString(KEY_IRREGULAR_PAYMENTS, irregularPaymentsToJson(backup.irregularPayments))
+            .putString(KEY_DASHBOARD_SETTINGS, settingsToJson(backup.settings))
+            .putString(KEY_PAID_FIXED_COSTS, longSetMapToJson(backup.paidFixedCosts))
+            .putString(KEY_PAID_UNKNOWN_PAYMENTS, longSetMapToJson(backup.paidUnknownPayments))
+            .putString(KEY_PAID_SALARY, salaryMapToJson(backup.paidSalary))
+            .apply()
     }
 
     /**

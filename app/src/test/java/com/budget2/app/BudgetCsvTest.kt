@@ -8,13 +8,13 @@ import org.junit.Test
 class BudgetCsvTest {
     private fun sampleBackup() = BudgetBackup(
         fixedCosts = listOf(
-            FixedCost(1, "Überweisen", "Miete", 600.0, true, -27),
-            FixedCost(2, "Abbuchung", "Miete, Strom", 80.55, false, 10),
-            FixedCost(3, "Umbuchung", "Zweck \"Spezial\"", 0.0, true, 1),
+            FixedCost(1, "Überweisen", "Miete Économies", 600.0, true, -27),
+            FixedCost(2, "Abbuchung", "Économies, Café", 80.55, false, 10),
+            FixedCost(3, "Umbuchung", "Zweck \"Spécial\"", 0.0, true, 1),
         ),
         irregularPayments = listOf(
-            IrregularPayment(7, "Oktober", "Abbuchung", "Geschenk", 42.5, false),
-            IrregularPayment(8, "unbekannt", "Überweisen", "Arzt", 15.0, true),
+            IrregularPayment(7, "Oktober", "Abbuchung", "Café", 42.5, false),
+            IrregularPayment(8, "unbekannt", "Überweisen", "Impôts", 15.0, true),
         ),
         paidFixedCosts = mapOf("2026-10" to setOf(1L, 3L)),
         paidUnknownPayments = mapOf("2026-10" to setOf(8L)),
@@ -34,7 +34,7 @@ class BudgetCsvTest {
         val lines = encodeBudgetCsv(sampleBackup()).trim().lines()
 
         assertEquals(CSV_HEADER, lines.first())
-        assertTrue(lines.any { it.startsWith("Fix,1,Überweisen,Miete,") })
+        assertTrue(lines.any { it.startsWith("Fix,1,Überweisen,Miete Économies,") })
         assertTrue(lines.any { it.startsWith("PaidFix,2026-10,1") })
         assertTrue(lines.any { it.startsWith("Salary,2026-10,true") })
         assertTrue(lines.any { it.startsWith("Settings,1234.56,300") })
@@ -44,8 +44,22 @@ class BudgetCsvTest {
     fun namesWithCommaAndQuotes_surviveTheRoundTrip() {
         val decoded = decodeBudgetCsv(encodeBudgetCsv(sampleBackup()))
 
-        assertEquals("Miete, Strom", decoded?.fixedCosts?.get(1)?.name)
-        assertEquals("Zweck \"Spezial\"", decoded?.fixedCosts?.get(2)?.name)
+        assertEquals("Économies, Café", decoded?.fixedCosts?.get(1)?.name)
+        assertEquals("Zweck \"Spécial\"", decoded?.fixedCosts?.get(2)?.name)
+    }
+
+    @Test
+    fun namesWithLineBreaksAndAccents_surviveTheRoundTrip() {
+        val backup = sampleBackup().copy(
+            fixedCosts = sampleBackup().fixedCosts.mapIndexed { index, cost ->
+                if (index == 0) cost.copy(name = "Café\nImpôts à Noël") else cost
+            },
+        )
+
+        val decoded = decodeBudgetCsv(encodeBudgetCsv(backup))
+
+        assertEquals("Café\nImpôts à Noël", decoded?.fixedCosts?.first()?.name)
+        assertEquals(backup, decoded)
     }
 
     @Test

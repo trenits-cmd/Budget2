@@ -142,7 +142,8 @@ private fun FixedCostsApp(repository: BudgetRepository) {
             val payload = encodeBudgetCsv(repository.exportBackup())
             val result = runCatching {
                 context.contentResolver.openOutputStream(uri)?.use { stream ->
-                    stream.write(payload.toByteArray(Charsets.UTF_8))
+                    // UTF-8 BOM keeps German/French accents correct when the CSV is opened in Excel.
+                    stream.write(("\uFEFF" + payload).toByteArray(Charsets.UTF_8))
                 } ?: error("Zieldatei nicht verfügbar")
             }
             backupMessage = result.fold(
@@ -159,7 +160,7 @@ private fun FixedCostsApp(repository: BudgetRepository) {
             backupMessage = "Import abgebrochen."
         } else {
             val payload = runCatching {
-                context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
                     ?: error("Quelldatei nicht verfügbar")
             }
             backupMessage = payload.fold(
@@ -640,6 +641,9 @@ private fun DashboardTab(
     val total = summary.totalCosts
     val paid = summary.paidFixedCosts
     val unpaid = (total - paid).coerceAtLeast(0.0)
+    // Exact amount that can move to savings while keeping the daily target and buffer intact.
+    val savingsTransfer = (summary.bufferToday - settings.minimumBuffer).coerceAtLeast(0.0)
+    val canTransferToSavings = summary.dailyBudgetToday > DAILY_TARGET && savingsTransfer > 0.0
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -802,75 +806,29 @@ private fun DashboardTab(
                     }
                     DashboardMetric("Bezahlte Fixkosten (inkl. Monats-Zahlungen)", money(summary.paidFixedCosts), PaidTint)
                     DashboardMetric("Restliche Fixkosten", money(summary.remainingFixedCosts), UnpaidTint)
-                }
-            }
-        }
-        item {
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-            ) {
-                Column(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text("Fixkosten im Dashboard", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Sichtbare Zwecke nach aktueller Filtereinstellung",
-                        fontSize = 12.sp,
-                        color = Muted,
-                    )
-                    if (filteredFixed.isEmpty()) {
-                        Text(
-                            "Keine Zwecke für die aktuelle Filterauswahl.",
-                            fontSize = 13.sp,
-                            color = Muted,
-                        )
-                    } else {
-                        filteredFixed.sortedBy { it.name }.forEach { cost ->
-                            val isPaid = cost.id in paidFixedIds
-                            Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(
-                                    Modifier.weight(0.7f),
-                                ) {
-                                    Text(
-                                        cost.name,
-                                        fontSize = 14.sp,
-                                        color = Ink,
-                                        fontWeight = FontWeight.Medium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                Column(
-                                    Modifier.weight(0.3f),
-                                ) {
-                                    Text(
-                                        if (isPaid) "bezahlt" else "unbezahlt",
-                                        fontSize = 11.sp,
-                                        color = if (isPaid) PaidTint else UnpaidTint,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                }
-                                Column(
-                                    Modifier.weight(0.5f),
-                                ) {
-                                    Text(
-                                        money(cost.amount),
-                                        fontSize = 12.sp,
-                                        color = Ink,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                }
-                            }
+                    if (canTransferToSavings) {
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(PaidBackground)
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Text("Auf Sparkonto überweisen", fontSize = 12.sp, color = Muted)
+                            Text(
+                                money(savingsTransfer),
+                                fontSize = 22.sp,
+                                color = PaidTint,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                "Exakter Betrag, damit ${money(DAILY_TARGET)} Tagesbudget und der " +
+                                    "Mindestpuffer von ${money(settings.minimumBuffer)} erhalten bleiben.",
+                                fontSize = 11.sp,
+                                color = Muted,
+                            )
                         }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Bezahlt: ${String.format("%.0f", summary.paidFixedCosts)} €", fontSize = 12.sp, color = PaidTint)
-                        Text("Unbezahlt: ${String.format("%.0f", summary.remainingFixedCosts)} €", fontSize = 12.sp, color = UnpaidTint)
                     }
                 }
             }
@@ -944,6 +902,76 @@ private fun DashboardTab(
                 }
             }
         }
+        item {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("Fixkosten im Dashboard", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Sichtbare Zwecke nach aktueller Filtereinstellung",
+                        fontSize = 12.sp,
+                        color = Muted,
+                    )
+                    if (filteredFixed.isEmpty()) {
+                        Text(
+                            "Keine Zwecke für die aktuelle Filterauswahl.",
+                            fontSize = 13.sp,
+                            color = Muted,
+                        )
+                    } else {
+                        filteredFixed.sortedBy { it.name }.forEach { cost ->
+                            val isPaid = cost.id in paidFixedIds
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(
+                                    Modifier.weight(0.7f),
+                                ) {
+                                    Text(
+                                        cost.name,
+                                        fontSize = 14.sp,
+                                        color = Ink,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                Column(
+                                    Modifier.weight(0.3f),
+                                ) {
+                                    Text(
+                                        if (isPaid) "bezahlt" else "unbezahlt",
+                                        fontSize = 11.sp,
+                                        color = if (isPaid) PaidTint else UnpaidTint,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                                Column(
+                                    Modifier.weight(0.5f),
+                                ) {
+                                    Text(
+                                        money(cost.amount),
+                                        fontSize = 12.sp,
+                                        color = Ink,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Bezahlt: ${String.format("%.0f", summary.paidFixedCosts)} €", fontSize = 12.sp, color = PaidTint)
+                        Text("Unbezahlt: ${String.format("%.0f", summary.remainingFixedCosts)} €", fontSize = 12.sp, color = UnpaidTint)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -982,32 +1010,32 @@ private fun PaymentTypeBar(total: PaymentTypeTotal) {
             Text("Gesamt: ${money(total.total)}", fontSize = 13.sp, color = Ink, fontWeight = FontWeight.SemiBold)
         }
         Row(
-            Modifier.fillMaxWidth().height(22.dp).clip(RoundedCornerShape(99.dp)).background(Paper),
+            Modifier.fillMaxWidth().height(32.dp).clip(RoundedCornerShape(99.dp)).background(Paper),
         ) {
             if (total.paid > 0) {
                 Box(
-                    Modifier.weight(total.paid.toFloat()).height(22.dp).background(PaidTint),
+                    Modifier.weight(total.paid.toFloat()).height(32.dp).background(PaidTint),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (total.paid / total.total >= 0.15) {
-                        Text("$paidPercent% · ${money(total.paid)}", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+                    if (paidPercent >= 15) {
+                        Text("$paidPercent%", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
                     }
                 }
             }
             if (total.unpaid > 0) {
                 Box(
-                    Modifier.weight(total.unpaid.toFloat()).height(22.dp).background(UnpaidTint),
+                    Modifier.weight(total.unpaid.toFloat()).height(32.dp).background(UnpaidTint),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (total.unpaid / total.total >= 0.15) {
-                        Text("$unpaidPercent% · ${money(total.unpaid)}", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+                    if (unpaidPercent >= 15) {
+                        Text("$unpaidPercent%", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
                     }
                 }
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Bezahlt: $paidPercent% (${money(total.paid)})", fontSize = 10.sp, color = PaidTint, fontWeight = FontWeight.SemiBold)
-            Text("Offen: $unpaidPercent% (${money(total.unpaid)})", fontSize = 10.sp, color = UnpaidTint, fontWeight = FontWeight.SemiBold)
+            Text("Bezahlt: $paidPercent% (${money(total.paid)})", fontSize = 11.sp, color = PaidTint, fontWeight = FontWeight.SemiBold)
+            Text("Offen: $unpaidPercent% (${money(total.unpaid)})", fontSize = 11.sp, color = UnpaidTint, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -1047,25 +1075,25 @@ private fun PaymentStatusBar(paid: Double, unpaid: Double) {
             }
         }
         Row(
-            Modifier.fillMaxWidth().height(18.dp).clip(RoundedCornerShape(99.dp)).background(Paper),
+            Modifier.fillMaxWidth().height(30.dp).clip(RoundedCornerShape(99.dp)).background(Paper),
         ) {
             if (paid > 0.0) {
                 Box(
-                    Modifier.weight(paid.toFloat()).height(18.dp).background(PaidTint),
+                    Modifier.weight(paid.toFloat()).height(30.dp).background(PaidTint),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (paidPercent >= 20) {
-                        Text("$paidPercent%", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    if (paidPercent >= 15) {
+                        Text("$paidPercent%", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             }
             if (unpaid > 0.0) {
                 Box(
-                    Modifier.weight(unpaid.toFloat()).height(18.dp).background(UnpaidTint),
+                    Modifier.weight(unpaid.toFloat()).height(30.dp).background(UnpaidTint),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (unpaidPercent >= 20) {
-                        Text("$unpaidPercent%", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    if (unpaidPercent >= 15) {
+                        Text("$unpaidPercent%", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             }

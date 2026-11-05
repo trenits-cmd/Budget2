@@ -4,11 +4,11 @@ Budget2 ist eine native Android-App zur Verwaltung monatlicher Fixkosten, unrege
 
 ## Funktionen
 
-- **Dashboard:** Gesamtkosten, bezahlte und offene Beträge, Gehaltseingang, Tagesbudget für heute und morgen, Kontostand, Mindestpuffer, Soll-Kontostand-Prognosen sowie Anteile nach Zahlungsart und Status. Der Zahlungsstatus wird als gestapelter Bezahlt/Unbezahlt-Balken dargestellt.
+- **Dashboard:** Gesamtkosten, bezahlte und offene Beträge, Gehaltseingang, Tagesbudget für heute und morgen, Kontostand, Mindestpuffer, Soll-Kontostand-Prognosen sowie Anteile nach Zahlungsart und Status. Der Zahlungsstatus wird als gestapelter Bezahlt/Unbezahlt-Balken dargestellt; die Balken sind groß genug für die Prozentwerte. Liegt das Tagesbudget über 60 €, wird zusätzlich der exakte Betrag angezeigt, der aufs Sparkonto überwiesen werden kann. Die Liste „Fixkosten im Dashboard“ steht am Ende des Tabs.
 - **Fixkosten:** Wiederkehrende Zahlungen mit Zahlungsart, Zweck, Betrag, Fälligkeitstag (Tag im Monat oder Tag vor Monatsende) und Bezahlstatus. Zahlungen für den angezeigten Monat werden automatisch mit aufgeführt.
 - **Unregelmäßige Zahlungen:** Zahlungen mit festem Monat oder dem Status **"unbekannt"**. Sie erscheinen zusätzlich im Fixkosten-Tab und fließen in das Monatsbudget ein.
 - **Settings:** Kontostand, Mindestpuffer, CSV-Export/Import und Verwaltung aller Fixkosten-Zwecke.
-- **CSV-Sicherung:** Alle Daten inklusive Einstellungen und Bezahlstatus werden als CSV exportiert bzw. wieder importiert. Der Speicherort wird über die Android-Dateiauswahl gewählt, sodass auch Google Drive möglich ist. Vor dem Import wird das Überschreiben bestätigt.
+- **CSV-Sicherung:** Alle Daten inklusive Einstellungen und Bezahlstatus werden als CSV exportiert bzw. wieder importiert. Der Import ersetzt die bestehenden Daten vollständig und wird vorher bestätigt. Der Speicherort wird über die Android-Dateiauswahl gewählt, sodass auch Google Drive möglich ist. UTF-8 mit BOM erhält deutsche und französische Sonderzeichen.
 - **Monatsansicht:** Umschalten zwischen aktuellem und nächstem Monat. Die App merkt sich die Tab-Historie und behält den ausgewählten Monat beim Zurücknavigieren im Blick.
 - **Zurück-Navigation:** Die System-Zurücktaste navigiert erst innerhalb der Tabs und setzt anschließend beim Verlassen des "Nächster Monat"-Zustands in den aktuellen Monat zurück, bevor sie die App minimiert.
 - **Status pro Monat und Jahr:** Bezahlte Fixkosten, unbekannte Zahlungen und Gehaltseingang werden getrennt für jeden Monat gespeichert (Schlüsselformat `yyyy-MM`).
@@ -56,7 +56,7 @@ Auf dem Desktop liegt der Shortcut **Budget2 Handy-Test.lnk** (Icon `docs/logo.i
 ADB-Gerät muss verbunden und autorisiert sein. Der Shortcut funktioniert direkt ohne manuelle Befehle.
 
 ### Releases
-- Aktueller Release: [Budget2 v1.05112026_1050](https://github.com/trenits-cmd/Budget2/releases/tag/v1.05112026_1050) (`Budget2-1.4-release.apk`), App-Version 1.4. Release-Tags folgen dem Schema `v1.DDMMYYYY_HHMM`.
+- Aktueller Release: [Budget2 v1.05112026_1113](https://github.com/trenits-cmd/Budget2/releases/tag/v1.05112026_1113) (`Budget2-1.5-release.apk`), App-Version 1.5. Release-Tags folgen dem Schema `v1.DDMMYYYY_HHMM`.
 - Release-Builds werden lokal mit dem Debug-Key signiert, bis ein stabiler Release-Keystore konfiguriert ist. Updates funktionieren nur, wenn derselbe Signaturschlüssel verwendet wird.
 - Der GitHub-Workflow `.github/workflows/build-apk.yml` baut bei jedem Push auf `main` ein Release-APK und lädt es als Artifact hoch.
 

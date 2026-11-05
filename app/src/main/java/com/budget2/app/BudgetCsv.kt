@@ -76,8 +76,7 @@ internal fun decodeBudgetCsv(text: String): BudgetBackup? {
     var settings: DashboardSettings? = null
     var recognisedAny = false
 
-    text.removePrefix("\uFEFF").lineSequence().forEach { rawLine ->
-        val fields = parseCsvLine(rawLine)
+    parseCsvRecords(text.removePrefix("\uFEFF")).forEach { fields ->
         if (fields.isEmpty()) return@forEach
         when (fields[0].trim()) {
             "Fix" -> {
@@ -181,28 +180,52 @@ private fun csvNumber(value: Double): String =
     if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
 
 /** Splits one CSV line, honouring quoted fields with doubled quotes. */
-internal fun parseCsvLine(line: String): List<String> {
-    if (line.isBlank()) return emptyList()
+internal fun parseCsvLine(line: String): List<String> =
+    parseCsvRecords(line).firstOrNull().orEmpty()
+
+/**
+ * Splits a complete CSV document into records. Quoted fields may contain commas,
+ * doubled quotes and line breaks, so a name such as "Café\nImpôts" survives a
+ * round trip. Blank lines are ignored.
+ */
+internal fun parseCsvRecords(text: String): List<List<String>> {
+    if (text.isEmpty()) return emptyList()
+    val records = mutableListOf<List<String>>()
     val fields = mutableListOf<String>()
     val current = StringBuilder()
     var inQuotes = false
     var index = 0
-    while (index < line.length) {
-        val char = line[index]
+
+    fun finishRecord() {
+        fields += current.toString()
+        current.clear()
+        if (fields.any { it.isNotEmpty() }) records += fields.toList()
+        fields.clear()
+    }
+
+    while (index < text.length) {
+        val char = text[index]
         when {
-            inQuotes && char == '"' && line.getOrNull(index + 1) == '"' -> {
-                current.append('"')
-                index++
+            char == '"' -> {
+                if (inQuotes && text.getOrNull(index + 1) == '"') {
+                    current.append('"')
+                    index++
+                } else {
+                    inQuotes = !inQuotes
+                }
             }
-            char == '"' -> inQuotes = !inQuotes
             !inQuotes && char == ',' -> {
                 fields += current.toString()
                 current.clear()
+            }
+            !inQuotes && (char == '\n' || char == '\r') -> {
+                if (char == '\r' && text.getOrNull(index + 1) == '\n') index++
+                finishRecord()
             }
             else -> current.append(char)
         }
         index++
     }
-    fields += current.toString()
-    return fields
+    finishRecord()
+    return records
 }

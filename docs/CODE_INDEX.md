@@ -22,7 +22,7 @@
 | `app/src/main/java/com/budget2/app/MainActivity.kt` | Gesamte Compose-UI, Navigation, Dialoge, CSV-Launcher, App-Zustand | `MainActivity`, `FixedCostsApp`, `DashboardTab`, `FixedCostsTab`, `IrregularPaymentsTab`, `SettingsTab`, `CsvBackupCard`, `DashboardSettingsCard` |
 | `BudgetModels.kt` | Domänenmodelle, Berechnungen, Monatslogik, IDs | `FixedCost`, `IrregularPayment`, `DashboardSettings`, `DashboardSummary`, `calculateDashboardSummary`, `paymentStatusPercentages`, `monthKey`, `nextId` |
 | `BudgetRepository.kt` | Alle Persistenzzugriffe, Migration, Seeding, Backup-Import/-Export | `BudgetRepository`, `initialize`, `exportBackup`, `importBackup`, `migrateLegacyMonthStorage` |
-| `BudgetCsv.kt` | CSV-Serialisierung und -Parsing des vollständigen Backups | `BudgetBackup`, `CSV_HEADER`, `encodeBudgetCsv`, `decodeBudgetCsv`, `parseCsvLine` |
+| `BudgetCsv.kt` | CSV-Serialisierung und -Parsing des vollständigen Backups | `BudgetBackup`, `CSV_HEADER`, `encodeBudgetCsv`, `decodeBudgetCsv`, `parseCsvLine`, `parseCsvRecords` |
 | `BudgetFormatting.kt` | Währungs- und Eingabeformatierung | `money`, `inputValue`, `parseAmount`, `dueDayLabel` |
 | `BudgetTheme.kt` | Farben und Compose-Theme | `Forest`, `Ink`, `Muted`, `PaidTint`, `UnpaidTint`, `Paper` |
 | `res/...` | Android-Ressourcen (Icon, Theme, Strings) | `ic_launcher`, `Theme.Budget2` |
@@ -74,8 +74,13 @@ Migration: Alte Schlüssel mit deutschen Monatsnamen (z. B. `oktober`) werden be
   1. `DashboardSettingsCard` (Kontostand, Mindestpuffer, „Dashboard-Werte speichern“)
   2. `CsvBackupCard` (CSV exportieren/importieren, Statusmeldung)
   3. „Zwecke verwalten“ mit Fixkostenliste
+- Dashboard-Reihenfolge: Filter → Gehaltseingang → Gesamtkosten/Unbezahlt → Planung bis zum Zahltag
+  → Kontostand & Puffer → Nach Zahlungsart → Zahlungsstatus → **Fixkosten im Dashboard** (bewusst zuletzt).
+- Überschreitet das Tagesbudget `DAILY_TARGET` (60 €), zeigt die Planungskarte den exakten Betrag
+  „Auf Sparkonto überweisen“: `bufferToday - minimumBuffer`. Damit bleiben 60 € Tagesbudget und
+  der Mindestpuffer erhalten.
 - Import ist zweistufig: Datei lesen → `pendingCsvImport` → Bestätigungsdialog → `repository.importBackup()` → `reloadAllData()`.
-- Export-Dateiname: `budget2-backup-yyyy-MM-dd_HHmm.csv`.
+- Export-Dateiname: `budget2-backup-yyyy-MM-dd_HHmm.csv`, UTF-8 mit BOM für Excel-kompatible Sonderzeichen.
 
 ## 6. CSV-Format (`BudgetCsv.kt`)
 
@@ -103,8 +108,13 @@ Header: `Typ,Feld1,Feld2,Feld3,Feld4,Feld5,Feld6`.
 - `nextId` berücksichtigt auch IDs aus Bezahlstatus-Maps, damit neue Einträge keinen
   alten Status erben.
 - Prozentwerte: bezahlter Anteil wird gerundet, unbezahlter Anteil ist `100 - paid`.
+- Balken tragen innen nur Prozentwerte; Beträge stehen darunter, damit nichts abgeschnitten wird.
 - Release-APK wird ohne konfigurierten Keystore mit dem Debug-Key signiert.
-- Zeichensatz: UTF-8. CSV-Export schreibt UTF-8 ohne BOM; Import toleriert ein BOM.
+- Zeichensatz: UTF-8. Der CSV-Export schreibt ein BOM, der Import entfernt es. Deutsche und
+  französische Sonderzeichen (`ä ö ü ß é è ê à ç ô î`) sowie Zeilenumbrüche in gequoteten
+  Feldern bleiben beim Roundtrip erhalten.
+- `importBackup` ersetzt alle sechs Datensätze in einem einzigen `SharedPreferences.Editor`,
+  damit kein halb importierter Zustand entsteht.
 
 ## 8. Änderungs-Checkliste für KI
 
@@ -113,7 +123,8 @@ Bei jeder Änderung:
 1. Betroffene Datei in Abschnitt 2 prüfen und bei neuen Dateien ergänzen.
 2. Neuen/geänderten Persistenz-Key in Abschnitt 4 dokumentieren.
 3. Neuen UI-Flow oder Dialog in Abschnitt 5 ergänzen.
-4. CSV-Format-Änderungen in Abschnitt 6 und in `BudgetCsvTest` nachziehen.
+4. CSV-Format-Änderungen in Abschnitt 6 und in `BudgetCsvTest` nachziehen (inkl. Sonderzeichen
+   und mehrzeiliger Felder).
 5. Invarianten in Abschnitt 7 aktualisieren, falls sich Regeln ändern.
 6. `docs/CODE_INDEX.md` im selben Commit wie den Code ändern.
 7. Danach `gradlew.bat :app:testDebugUnitTest` und `:app:assembleRelease` ausführen.
