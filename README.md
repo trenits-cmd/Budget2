@@ -56,7 +56,7 @@ Auf dem Desktop liegt der Shortcut **Budget2 Handy-Test.lnk** (Icon `docs/logo.i
 ADB-Gerät muss verbunden und autorisiert sein. Der Shortcut funktioniert direkt ohne manuelle Befehle.
 
 ### Releases
-- Aktueller Release: [Budget2 v1.05112026_0300](https://github.com/trenits-cmd/Budget2/releases/tag/v1.05112026_0300) (`Budget2-1.4-release.apk`), App-Version 1.4. Release-Tags folgen dem Schema `v1.DDMMYYYY_HHMM`.
+- Aktueller Release: [Budget2 v1.05112026_1050](https://github.com/trenits-cmd/Budget2/releases/tag/v1.05112026_1050) (`Budget2-1.4-release.apk`), App-Version 1.4. Release-Tags folgen dem Schema `v1.DDMMYYYY_HHMM`.
 - Release-Builds werden lokal mit dem Debug-Key signiert, bis ein stabiler Release-Keystore konfiguriert ist. Updates funktionieren nur, wenn derselbe Signaturschlüssel verwendet wird.
 - Der GitHub-Workflow `.github/workflows/build-apk.yml` baut bei jedem Push auf `main` ein Release-APK und lädt es als Artifact hoch.
 
