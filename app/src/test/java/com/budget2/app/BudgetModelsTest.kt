@@ -83,6 +83,8 @@ class BudgetModelsTest {
         assertEquals(624.99, summary.totalCosts, 0.001)
         assertEquals(51.0, summary.dailyBudgetToday, 0.0)
         assertEquals(55.0, summary.dailyBudgetTomorrow, 0.0)
+        assertEquals((1000.0 - 24.99 - 100.0) / 17, summary.dailyBudgetTodayExact, 0.001)
+        assertEquals((1000.0 - 24.99 - 100.0) / 16, summary.dailyBudgetTomorrowExact, 0.001)
         assertEquals(-45.0, summary.bufferToday, 0.0)
         assertEquals(15.0, summary.bufferTomorrow, 0.0)
         assertEquals(1045.0, summary.balanceMinusBuffer, 0.0)

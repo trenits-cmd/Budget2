@@ -130,6 +130,8 @@ internal data class DashboardSummary(
     val totalCosts: Double,
     val dailyBudgetToday: Double,
     val dailyBudgetTomorrow: Double,
+    val dailyBudgetTodayExact: Double,
+    val dailyBudgetTomorrowExact: Double,
     val bufferToday: Double,
     val bufferTomorrow: Double,
     val balanceMinusBuffer: Double,
@@ -179,6 +181,12 @@ internal fun calculateDashboardSummary(
         .roundToInt().toDouble()
     val dailyBudgetTomorrow = ((effectiveBalance - remaining - settings.minimumBuffer) / safeDaysTomorrow)
         .roundToInt().toDouble()
+    // Unrounded values for the small hint below the daily budget cards.
+    val exactRemaining = total - paid
+    val dailyBudgetTodayExact =
+        (effectiveBalance - exactRemaining - settings.minimumBuffer) / safeDaysRemaining
+    val dailyBudgetTomorrowExact =
+        (effectiveBalance - exactRemaining - settings.minimumBuffer) / safeDaysTomorrow
     val daysForTarget = daysRemaining.coerceAtLeast(0)
     val bufferToday = effectiveBalance - (DAILY_TARGET * daysForTarget + remaining)
     val bufferTomorrow = effectiveBalance - (DAILY_TARGET * (daysForTarget - 1).coerceAtLeast(0) + remaining)
@@ -192,6 +200,8 @@ internal fun calculateDashboardSummary(
         totalCosts = total,
         dailyBudgetToday = dailyBudgetToday,
         dailyBudgetTomorrow = dailyBudgetTomorrow,
+        dailyBudgetTodayExact = dailyBudgetTodayExact,
+        dailyBudgetTomorrowExact = dailyBudgetTomorrowExact,
         bufferToday = bufferToday,
         bufferTomorrow = bufferTomorrow,
         balanceMinusBuffer = effectiveBalance - bufferToday,

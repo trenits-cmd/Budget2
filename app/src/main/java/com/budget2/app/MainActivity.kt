@@ -851,12 +851,14 @@ private fun DashboardTab(
                         DashboardSummary(
                             label = "Tagesbudget heute",
                             value = money(summary.dailyBudgetToday),
+                            hint = "ungerundet ${money(summary.dailyBudgetTodayExact)}",
                             modifier = Modifier.weight(1f),
                             tint = Forest,
                         )
                         DashboardSummary(
                             label = "Tagesbudget morgen",
                             value = money(summary.dailyBudgetTomorrow),
+                            hint = "ungerundet ${money(summary.dailyBudgetTomorrowExact)}",
                             modifier = Modifier.weight(1f),
                             tint = Forest,
                         )
@@ -1042,7 +1044,13 @@ private fun DashboardMetric(label: String, value: String, valueColor: Color = In
 }
 
 @Composable
-private fun DashboardSummary(label: String, value: String, modifier: Modifier, tint: Color) {
+private fun DashboardSummary(
+    label: String,
+    value: String,
+    modifier: Modifier,
+    tint: Color,
+    hint: String? = null,
+) {
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
@@ -1054,6 +1062,9 @@ private fun DashboardSummary(label: String, value: String, modifier: Modifier, t
         ) {
             Text(label, fontSize = 12.sp, color = Muted)
             Text(value, fontSize = 17.sp, color = tint, fontWeight = FontWeight.Bold, maxLines = 1)
+            if (hint != null) {
+                Text(hint, fontSize = 10.sp, color = Muted, maxLines = 1)
+            }
         }
     }
 }

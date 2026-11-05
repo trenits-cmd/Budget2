@@ -76,6 +76,8 @@ Migration: Alte Schlüssel mit deutschen Monatsnamen (z. B. `oktober`) werden be
   3. „Zwecke verwalten“ mit Fixkostenliste
 - Dashboard-Reihenfolge: Filter → Gehaltseingang → Gesamtkosten/Unbezahlt → Planung bis zum Zahltag
   → Kontostand & Puffer → Nach Zahlungsart → Zahlungsstatus → **Fixkosten im Dashboard** (bewusst zuletzt).
+- `DashboardSummary` zeigt unter „Tagesbudget heute“ und „Tagesbudget morgen“ zusätzlich den
+  ungerundeten Wert (`dailyBudgetTodayExact` / `dailyBudgetTomorrowExact`, 10 sp, grau).
 - Überschreitet das Tagesbudget `DAILY_TARGET` (60 €), zeigt die Planungskarte den exakten Betrag
   „Auf Sparkonto überweisen“: `settings.balance - alle offenen Kosten - 60 € × verbleibende Tage
   - minimumBuffer`. Die Rechnung nutzt bewusst **alle** Fixkosten, nicht die gefilterte Liste.
