@@ -4,7 +4,7 @@ Budget2 ist eine native Android-App zur Verwaltung monatlicher Fixkosten, unrege
 
 ## Funktionen
 
-- **Dashboard:** Gesamtkosten, bezahlte und offene Beträge, Gehaltseingang, Tagesbudget für heute und morgen, Kontostand, Mindestpuffer, Soll-Kontostand-Prognosen sowie Anteile nach Zahlungsart und Status. Der Zahlungsstatus wird als gestapelter Bezahlt/Unbezahlt-Balken dargestellt; die Balken sind groß genug für die Prozentwerte. Liegt das Tagesbudget über 60 €, wird zusätzlich der exakte Betrag angezeigt, der aufs Sparkonto überwiesen werden kann. Die Liste „Fixkosten im Dashboard“ steht am Ende des Tabs.
+- **Dashboard:** Gesamtkosten, bezahlte und offene Beträge, Gehaltseingang, Tagesbudget für heute und morgen, Kontostand, Mindestpuffer, Soll-Kontostand-Prognosen sowie Anteile nach Zahlungsart und Status. Der Zahlungsstatus wird als gestapelter Bezahlt/Unbezahlt-Balken dargestellt; die Balken sind groß genug für die Prozentwerte. Liegt das Tagesbudget über 60 €, wird zusätzlich der exakte Betrag angezeigt, der aufs Sparkonto überwiesen werden kann. Er wird immer aus allen Fixkosten berechnet, unabhängig vom Filter, und berücksichtigt Tagesbudget, restliche Zahlungen und Mindestpuffer. Die Tage bis zum Gehalt erscheinen als farbiger Hinweis: mehr als 10 Tage rot, 8–10 Tage gelb, 7 Tage oder weniger grün. Die Liste „Fixkosten im Dashboard“ steht am Ende des Tabs.
 - **Fixkosten:** Wiederkehrende Zahlungen mit Zahlungsart, Zweck, Betrag, Fälligkeitstag (Tag im Monat oder Tag vor Monatsende) und Bezahlstatus. Zahlungen für den angezeigten Monat werden automatisch mit aufgeführt.
 - **Unregelmäßige Zahlungen:** Zahlungen mit festem Monat oder dem Status **"unbekannt"**. Sie erscheinen zusätzlich im Fixkosten-Tab und fließen in das Monatsbudget ein.
 - **Settings:** Kontostand, Mindestpuffer, CSV-Export/Import und Verwaltung aller Fixkosten-Zwecke.
@@ -56,7 +56,7 @@ Auf dem Desktop liegt der Shortcut **Budget2 Handy-Test.lnk** (Icon `docs/logo.i
 ADB-Gerät muss verbunden und autorisiert sein. Der Shortcut funktioniert direkt ohne manuelle Befehle.
 
 ### Releases
-- Aktueller Release: [Budget2 v1.05112026_1113](https://github.com/trenits-cmd/Budget2/releases/tag/v1.05112026_1113) (`Budget2-1.5-release.apk`), App-Version 1.5. Release-Tags folgen dem Schema `v1.DDMMYYYY_HHMM`.
+- Aktueller Release: [Budget2 v1.05112026_1210](https://github.com/trenits-cmd/Budget2/releases/tag/v1.05112026_1210) (`Budget2-1.6-release.apk`), App-Version 1.6. Release-Tags folgen dem Schema `v1.DDMMYYYY_HHMM`.
 - Release-Builds werden lokal mit dem Debug-Key signiert, bis ein stabiler Release-Keystore konfiguriert ist. Updates funktionieren nur, wenn derselbe Signaturschlüssel verwendet wird.
 - Der GitHub-Workflow `.github/workflows/build-apk.yml` baut bei jedem Push auf `main` ein Release-APK und lädt es als Artifact hoch.
 

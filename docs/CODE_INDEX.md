@@ -24,7 +24,7 @@
 | `BudgetRepository.kt` | Alle Persistenzzugriffe, Migration, Seeding, Backup-Import/-Export | `BudgetRepository`, `initialize`, `exportBackup`, `importBackup`, `migrateLegacyMonthStorage` |
 | `BudgetCsv.kt` | CSV-Serialisierung und -Parsing des vollständigen Backups | `BudgetBackup`, `CSV_HEADER`, `encodeBudgetCsv`, `decodeBudgetCsv`, `parseCsvLine`, `parseCsvRecords` |
 | `BudgetFormatting.kt` | Währungs- und Eingabeformatierung | `money`, `inputValue`, `parseAmount`, `dueDayLabel` |
-| `BudgetTheme.kt` | Farben und Compose-Theme | `Forest`, `Ink`, `Muted`, `PaidTint`, `UnpaidTint`, `Paper` |
+| `BudgetTheme.kt` | Farben und Compose-Theme | `Forest`, `Ink`, `Muted`, `PaidTint`, `UnpaidTint`, `WarningTint`, `WarningBackground`, `Paper` |
 | `res/...` | Android-Ressourcen (Icon, Theme, Strings) | `ic_launcher`, `Theme.Budget2` |
 | `app/src/test/.../BudgetCsvTest.kt` | Roundtrip- und Robustheitstests für CSV | `encodeThenDecode_restoresEveryValue` |
 | `app/src/test/.../BudgetModelsTest.kt` | Tests für Berechnungen und Monatslogik | – |
@@ -77,8 +77,11 @@ Migration: Alte Schlüssel mit deutschen Monatsnamen (z. B. `oktober`) werden be
 - Dashboard-Reihenfolge: Filter → Gehaltseingang → Gesamtkosten/Unbezahlt → Planung bis zum Zahltag
   → Kontostand & Puffer → Nach Zahlungsart → Zahlungsstatus → **Fixkosten im Dashboard** (bewusst zuletzt).
 - Überschreitet das Tagesbudget `DAILY_TARGET` (60 €), zeigt die Planungskarte den exakten Betrag
-  „Auf Sparkonto überweisen“: `bufferToday - minimumBuffer`. Damit bleiben 60 € Tagesbudget und
-  der Mindestpuffer erhalten.
+  „Auf Sparkonto überweisen“: `settings.balance - alle offenen Kosten - 60 € × verbleibende Tage
+  - minimumBuffer`. Die Rechnung nutzt bewusst **alle** Fixkosten, nicht die gefilterte Liste.
+  Damit bleiben Tagesbudget, restliche Zahlungen und Mindestpuffer erhalten.
+- Die Tage bis zum Gehalt stehen als farbiger Badge in der Planungskarte:
+  `> 10` rot (`UnpaidTint`), `8–10` gelb (`WarningTint`), `<= 7` grün (`PaidTint`).
 - Import ist zweistufig: Datei lesen → `pendingCsvImport` → Bestätigungsdialog → `repository.importBackup()` → `reloadAllData()`.
 - Export-Dateiname: `budget2-backup-yyyy-MM-dd_HHmm.csv`, UTF-8 mit BOM für Excel-kompatible Sonderzeichen.
 

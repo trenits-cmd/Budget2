@@ -641,9 +641,44 @@ private fun DashboardTab(
     val total = summary.totalCosts
     val paid = summary.paidFixedCosts
     val unpaid = (total - paid).coerceAtLeast(0.0)
-    // Exact amount that can move to savings while keeping the daily target and buffer intact.
-    val savingsTransfer = (summary.bufferToday - settings.minimumBuffer).coerceAtLeast(0.0)
-    val canTransferToSavings = summary.dailyBudgetToday > DAILY_TARGET && savingsTransfer > 0.0
+
+    // Savings must not depend on the dashboard filter: use every cost for the calculation.
+    val fullSummary = calculateDashboardSummary(
+        fixedCosts = fixedCosts,
+        paidFixedCostIds = paidFixedIds,
+        irregularPayments = activeIrregular,
+        paidUnknownPaymentIds = paidUnknownIds,
+        settings = settings,
+        today = LocalDate.now(),
+        viewingDate = viewingDate,
+    )
+    val fullUnpaid = (fullSummary.totalCosts - fullSummary.paidFixedCosts).coerceAtLeast(0.0)
+    val savingsDays = fullSummary.daysRemaining.coerceAtLeast(0)
+    // Keep the remaining bills, the 60 € daily target and the configured buffer.
+    val savingsTransfer = (
+        settings.balance -
+            fullUnpaid -
+            DAILY_TARGET * savingsDays -
+            settings.minimumBuffer
+        ).coerceAtLeast(0.0)
+    val canTransferToSavings = savingsTransfer > 0.0
+
+    val daysUntilSalary = summary.daysRemaining.coerceAtLeast(0)
+    val daysColor = when {
+        daysUntilSalary > 10 -> UnpaidTint
+        daysUntilSalary > 7 -> WarningTint
+        else -> PaidTint
+    }
+    val daysBackground = when {
+        daysUntilSalary > 10 -> UnpaidBackground
+        daysUntilSalary > 7 -> WarningBackground
+        else -> PaidBackground
+    }
+    val salaryDaysLabel = when (daysUntilSalary) {
+        0 -> "Gehalt heute"
+        1 -> "Gehalt morgen"
+        else -> "Gehalt in $daysUntilSalary Tagen"
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -781,14 +816,36 @@ private fun DashboardTab(
                     Modifier.fillMaxWidth().padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("Planung bis zum Zahltag", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "Stichtag ${summary.cutoffDate.format(DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.GERMANY))} · " +
-                                "${summary.daysRemaining.coerceAtLeast(0)} Tage verbleibend",
-                            fontSize = 12.sp,
-                            color = Muted,
-                        )
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Column(
+                            Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Text("Planung bis zum Zahltag", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Stichtag ${summary.cutoffDate.format(DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.GERMANY))}",
+                                fontSize = 12.sp,
+                                color = Muted,
+                            )
+                        }
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(99.dp))
+                                .background(daysBackground)
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                salaryDaysLabel,
+                                fontSize = 12.sp,
+                                color = daysColor,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                            )
+                        }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         DashboardSummary(
@@ -823,8 +880,9 @@ private fun DashboardTab(
                                 fontWeight = FontWeight.Bold,
                             )
                             Text(
-                                "Exakter Betrag, damit ${money(DAILY_TARGET)} Tagesbudget und der " +
-                                    "Mindestpuffer von ${money(settings.minimumBuffer)} erhalten bleiben.",
+                                "Exakter Betrag aus allen Fixkosten. ${money(DAILY_TARGET)} Tagesbudget, " +
+                                    "die restlichen Zahlungen und der Mindestpuffer von " +
+                                    "${money(settings.minimumBuffer)} bleiben reserviert.",
                                 fontSize = 11.sp,
                                 color = Muted,
                             )

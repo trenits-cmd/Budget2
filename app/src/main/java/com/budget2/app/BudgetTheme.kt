@@ -13,6 +13,8 @@ internal val PaidBackground = Color(0xFFE7F6EC)
 internal val UnpaidBackground = Color(0xFFFFE9E6)
 internal val PaidTint = Color(0xFF28734A)
 internal val UnpaidTint = Color(0xFFB34135)
+internal val WarningTint = Color(0xFF9A6700)
+internal val WarningBackground = Color(0xFFFFF4D6)
 
 @Composable
 internal fun BudgetTheme(content: @Composable () -> Unit) {
