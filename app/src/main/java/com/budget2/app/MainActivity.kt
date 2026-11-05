@@ -3,7 +3,9 @@ package com.budget2.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.selection.selectable
@@ -38,8 +40,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -57,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -67,8 +73,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+private enum class DashboardStatusFilter {
+    ALL,
+    PAID,
+    UNPAID,
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -107,6 +120,63 @@ private fun FixedCostsApp(repository: BudgetRepository) {
     var deletingIrregular by remember { mutableStateOf<IrregularPayment?>(null) }
     var confirmIrregularReset by remember { mutableStateOf(false) }
 
+    var backupMessage by remember { mutableStateOf<String?>(null) }
+    var pendingCsvImport by remember { mutableStateOf<BudgetBackup?>(null) }
+    val context = LocalContext.current
+
+    fun reloadAllData() {
+        fixedCosts = repository.loadFixedCosts()
+        irregularPayments = repository.loadIrregularPayments()
+        dashboardSettings = repository.loadDashboardSettings()
+        paidFixedCostsMap = repository.loadPaidFixedCostsMap()
+        paidUnknownPaymentsMap = repository.loadPaidUnknownPaymentsMap()
+        paidSalaryMap = repository.loadPaidSalaryMap()
+    }
+
+    val csvExporter = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv"),
+    ) { uri ->
+        if (uri == null) {
+            backupMessage = "Export abgebrochen."
+        } else {
+            val payload = encodeBudgetCsv(repository.exportBackup())
+            val result = runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { stream ->
+                    stream.write(payload.toByteArray(Charsets.UTF_8))
+                } ?: error("Zieldatei nicht verfügbar")
+            }
+            backupMessage = result.fold(
+                onSuccess = { "CSV gespeichert. Die Datei liegt am gewählten Ort, z. B. in Google Drive." },
+                onFailure = { "Export fehlgeschlagen: ${it.message}" },
+            )
+        }
+    }
+
+    val csvImporter = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) {
+            backupMessage = "Import abgebrochen."
+        } else {
+            val payload = runCatching {
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: error("Quelldatei nicht verfügbar")
+            }
+            backupMessage = payload.fold(
+                onSuccess = { text ->
+                    val backup = decodeBudgetCsv(text)
+                    if (backup == null) {
+                        "Keine gültige Sicherungsdatei erkannt."
+                    } else {
+                        pendingCsvImport = backup
+                        null
+                    }
+                },
+                onFailure = { "Import fehlgeschlagen: ${it.message}" },
+            )
+        }
+    }
+
     val viewingDate = LocalDate.now().plusMonths(viewingMonthOffset.toLong())
     val viewingMonthName = viewingDate.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.GERMANY))
     val viewingMonthKey = monthKey(viewingDate)
@@ -123,7 +193,8 @@ private fun FixedCostsApp(repository: BudgetRepository) {
     }
 
     val hasOpenDialog = showEditor || showIrregularEditor || deletingCost != null ||
-        deletingIrregular != null || confirmReset || confirmIrregularReset
+        deletingIrregular != null || confirmReset || confirmIrregularReset ||
+        pendingCsvImport != null
     BackHandler(enabled = !hasOpenDialog && (tabHistory.isNotEmpty() || viewingMonthOffset != 0)) {
         when {
             tabHistory.isNotEmpty() -> selectedTab = tabHistory.removeAt(tabHistory.lastIndex)
@@ -281,10 +352,28 @@ private fun FixedCostsApp(repository: BudgetRepository) {
             3 -> SettingsTab(
                 fixedCosts = fixedCosts,
                 dashboardSettings = dashboardSettings,
+                backupMessage = backupMessage,
                 modifier = Modifier.padding(padding),
                 onSaveDashboardSettings = { updated ->
                     dashboardSettings = updated
                     repository.saveDashboardSettings(updated)
+                },
+                onExportCsv = {
+                    backupMessage = null
+                    val stamp = LocalDateTime.now()
+                        .format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmm"))
+                    csvExporter.launch("budget2-backup-$stamp.csv")
+                },
+                onImportCsv = {
+                    backupMessage = null
+                    csvImporter.launch(
+                        arrayOf(
+                            "text/csv",
+                            "text/comma-separated-values",
+                            "text/plain",
+                            "*/*",
+                        ),
+                    )
                 },
                 onGoToDashboard = { selectTab(0) },
                 onAdd = {
@@ -456,6 +545,37 @@ private fun FixedCostsApp(repository: BudgetRepository) {
             containerColor = Color.White,
         )
     }
+
+    pendingCsvImport?.let { backup ->
+        AlertDialog(
+            onDismissRequest = { pendingCsvImport = null },
+            title = { Text("CSV-Import bestätigen?") },
+            text = {
+                Text(
+                    "Alle vorhandenen Daten werden ersetzt durch: " +
+                        "${backup.fixedCosts.size} Fixkosten, " +
+                        "${backup.irregularPayments.size} unregelmäßige Zahlungen sowie " +
+                        "Einstellungen und Bezahlstatus.",
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        repository.importBackup(backup)
+                        reloadAllData()
+                        backupMessage = "CSV importiert: ${backup.fixedCosts.size} Fixkosten, " +
+                            "${backup.irregularPayments.size} unregelmäßige Zahlungen."
+                        pendingCsvImport = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Forest),
+                ) { Text("Importieren") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingCsvImport = null }) { Text("Abbrechen", color = Muted) }
+            },
+            containerColor = Color.White,
+        )
+    }
 }
 
 @Composable
@@ -474,17 +594,44 @@ private fun DashboardTab(
     val paidFixedIds = paidFixedCostsMap[viewingMonthKey] ?: emptySet()
     val paidUnknownIds = paidUnknownPaymentsMap[viewingMonthKey] ?: emptySet()
 
+    var statusFilter by remember { mutableStateOf(DashboardStatusFilter.ALL) }
+    var selectedPaymentTypes by remember { mutableStateOf(emptySet<String>()) }
+
+    val allPaymentTypes = PaymentTypes
+    val activeIrregular = irregularPaymentsForMonth(irregularPayments, viewingDate)
+    val filteredFixed = fixedCosts.filter { cost ->
+        val matchesType = selectedPaymentTypes.isEmpty() || cost.paymentType in selectedPaymentTypes
+        val isPaid = cost.id in paidFixedIds
+        val matchesStatus = when (statusFilter) {
+            DashboardStatusFilter.ALL -> true
+            DashboardStatusFilter.PAID -> isPaid
+            DashboardStatusFilter.UNPAID -> !isPaid
+        }
+        matchesType && matchesStatus
+    }
+    val filteredIrregular = activeIrregular.filter { payment ->
+        val matchesType = selectedPaymentTypes.isEmpty() || payment.paymentType in selectedPaymentTypes
+        val clean = payment.month.trim().lowercase()
+        val isPaid = if (clean == "unbekannt") payment.id in paidUnknownIds else payment.isPaid
+        val matchesStatus = when (statusFilter) {
+            DashboardStatusFilter.ALL -> true
+            DashboardStatusFilter.PAID -> isPaid
+            DashboardStatusFilter.UNPAID -> !isPaid
+        }
+        matchesType && matchesStatus
+    }
+
     val totals = paymentTypeTotals(
-        fixedCosts = fixedCosts,
-        irregularPayments = irregularPayments,
+        fixedCosts = filteredFixed,
+        irregularPayments = filteredIrregular,
         viewingDate = viewingDate,
         paidFixedCostIds = paidFixedIds,
         paidUnknownPaymentIds = paidUnknownIds,
     )
     val summary = calculateDashboardSummary(
-        fixedCosts = fixedCosts,
+        fixedCosts = filteredFixed,
         paidFixedCostIds = paidFixedIds,
-        irregularPayments = irregularPayments,
+        irregularPayments = filteredIrregular,
         paidUnknownPaymentIds = paidUnknownIds,
         settings = settings,
         today = LocalDate.now(),
@@ -510,18 +657,98 @@ private fun DashboardTab(
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
             ) {
-                Row(
+                Column(
                     Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("Gehaltseingang", fontSize = 15.sp, color = Ink, fontWeight = FontWeight.SemiBold)
-                        Text("Gehalt für ${viewingDate.format(DateTimeFormatter.ofPattern("MMMM", Locale.GERMANY))} erhalten?", fontSize = 12.sp, color = Muted)
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("Filter", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                        Text("Nach Status und Zahlungart filtern", fontSize = 12.sp, color = Muted)
                     }
-                    Switch(
-                        checked = salaryReceived,
-                        onCheckedChange = onToggleSalary,
-                    )
+                    Text("Status", fontSize = 12.sp, color = Muted)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = statusFilter == DashboardStatusFilter.ALL,
+                            onClick = { statusFilter = DashboardStatusFilter.ALL },
+                            label = { Text("Alle") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Forest,
+                                selectedLabelColor = Color.White,
+                            ),
+                        )
+                        FilterChip(
+                            selected = statusFilter == DashboardStatusFilter.PAID,
+                            onClick = { statusFilter = DashboardStatusFilter.PAID },
+                            label = { Text("Bezahlt") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = PaidTint,
+                                selectedLabelColor = Color.White,
+                            ),
+                        )
+                        FilterChip(
+                            selected = statusFilter == DashboardStatusFilter.UNPAID,
+                            onClick = { statusFilter = DashboardStatusFilter.UNPAID },
+                            label = { Text("Unbezahlt") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = UnpaidTint,
+                                selectedLabelColor = Color.White,
+                            ),
+                        )
+                    }
+                    Text("Zahlungsart", fontSize = 12.sp, color = Muted)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        allPaymentTypes.forEach { type ->
+                            val selected = type in selectedPaymentTypes
+                            FilterChip(
+                                selected = selected,
+                                onClick = {
+                                    selectedPaymentTypes = if (selected) {
+                                        selectedPaymentTypes - type
+                                    } else {
+                                        selectedPaymentTypes + type
+                                    }
+                                },
+                                label = { Text(type) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Forest,
+                                    selectedLabelColor = Color.White,
+                                ),
+                            )
+                        }
+                    }
+                    if (statusFilter != DashboardStatusFilter.ALL || selectedPaymentTypes.isNotEmpty()) {
+                        TextButton(onClick = {
+                            statusFilter = DashboardStatusFilter.ALL
+                            selectedPaymentTypes = emptySet()
+                        }) {
+                            Text("Filter zurücksetzen")
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("Gehaltseingang", fontSize = 15.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                            Text("Gehalt für ${viewingDate.format(DateTimeFormatter.ofPattern("MMMM", Locale.GERMANY))} erhalten?", fontSize = 12.sp, color = Muted)
+                        }
+                        Switch(
+                            checked = salaryReceived,
+                            onCheckedChange = onToggleSalary,
+                        )
+                    }
                 }
             }
         }
@@ -575,6 +802,76 @@ private fun DashboardTab(
                     }
                     DashboardMetric("Bezahlte Fixkosten (inkl. Monats-Zahlungen)", money(summary.paidFixedCosts), PaidTint)
                     DashboardMetric("Restliche Fixkosten", money(summary.remainingFixedCosts), UnpaidTint)
+                }
+            }
+        }
+        item {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("Fixkosten im Dashboard", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Sichtbare Zwecke nach aktueller Filtereinstellung",
+                        fontSize = 12.sp,
+                        color = Muted,
+                    )
+                    if (filteredFixed.isEmpty()) {
+                        Text(
+                            "Keine Zwecke für die aktuelle Filterauswahl.",
+                            fontSize = 13.sp,
+                            color = Muted,
+                        )
+                    } else {
+                        filteredFixed.sortedBy { it.name }.forEach { cost ->
+                            val isPaid = cost.id in paidFixedIds
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(
+                                    Modifier.weight(0.7f),
+                                ) {
+                                    Text(
+                                        cost.name,
+                                        fontSize = 14.sp,
+                                        color = Ink,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                Column(
+                                    Modifier.weight(0.3f),
+                                ) {
+                                    Text(
+                                        if (isPaid) "bezahlt" else "unbezahlt",
+                                        fontSize = 11.sp,
+                                        color = if (isPaid) PaidTint else UnpaidTint,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                                Column(
+                                    Modifier.weight(0.5f),
+                                ) {
+                                    Text(
+                                        money(cost.amount),
+                                        fontSize = 12.sp,
+                                        color = Ink,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Bezahlt: ${String.format("%.0f", summary.paidFixedCosts)} €", fontSize = 12.sp, color = PaidTint)
+                        Text("Unbezahlt: ${String.format("%.0f", summary.remainingFixedCosts)} €", fontSize = 12.sp, color = UnpaidTint)
+                    }
                 }
             }
         }
@@ -1078,8 +1375,11 @@ private fun TableCell(text: String, modifier: Modifier, color: Color = Muted, bo
 private fun SettingsTab(
     fixedCosts: List<FixedCost>,
     dashboardSettings: DashboardSettings,
+    backupMessage: String?,
     modifier: Modifier = Modifier,
     onSaveDashboardSettings: (DashboardSettings) -> Unit,
+    onExportCsv: () -> Unit,
+    onImportCsv: () -> Unit,
     onGoToDashboard: () -> Unit,
     onAdd: () -> Unit,
     onEdit: (FixedCost) -> Unit,
@@ -1095,6 +1395,13 @@ private fun SettingsTab(
                 settings = dashboardSettings,
                 onSave = onSaveDashboardSettings,
                 onSaved = onGoToDashboard,
+            )
+        }
+        item {
+            CsvBackupCard(
+                message = backupMessage,
+                onExport = onExportCsv,
+                onImport = onImportCsv,
             )
         }
         item {
@@ -1222,6 +1529,45 @@ private fun DashboardSettingsCard(
                 if (showSavedMessage) {
                     Text("✓ Gespeichert!", fontSize = 12.sp, color = PaidTint, fontWeight = FontWeight.SemiBold)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CsvBackupCard(
+    message: String?,
+    onExport: () -> Unit,
+    onImport: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("CSV-Sicherung", fontSize = 16.sp, color = Ink, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Sichert alle Daten inklusive Einstellungen und Bezahlstatus. Beim Export und Import " +
+                    "kann Google Drive als Speicherort gewählt werden.",
+                fontSize = 12.sp,
+                color = Muted,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onExport,
+                    colors = ButtonDefaults.buttonColors(containerColor = Forest),
+                ) {
+                    Text("CSV exportieren", fontSize = 12.sp)
+                }
+                OutlinedButton(onClick = onImport) {
+                    Text("CSV importieren", fontSize = 12.sp)
+                }
+            }
+            if (message != null) {
+                Text(message, fontSize = 12.sp, color = Muted)
             }
         }
     }

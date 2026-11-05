@@ -219,6 +219,26 @@ internal class BudgetRepository(context: Context) {
         preferences.edit().putString(preferenceName, json.toString()).apply()
     }
 
+    /** Reads every stored dataset so it can be written to a CSV backup file. */
+    fun exportBackup(): BudgetBackup = BudgetBackup(
+        fixedCosts = loadFixedCosts(),
+        irregularPayments = loadIrregularPayments(),
+        paidFixedCosts = loadPaidFixedCostsMap(),
+        paidUnknownPayments = loadPaidUnknownPaymentsMap(),
+        paidSalary = loadPaidSalaryMap(),
+        settings = loadDashboardSettings(),
+    )
+
+    /** Replaces every stored dataset with the content of an imported backup. */
+    fun importBackup(backup: BudgetBackup) {
+        saveFixedCosts(backup.fixedCosts)
+        saveIrregularPayments(backup.irregularPayments)
+        savePaidFixedCostsMap(backup.paidFixedCosts)
+        savePaidUnknownPaymentsMap(backup.paidUnknownPayments)
+        savePaidSalaryMap(backup.paidSalary)
+        saveDashboardSettings(backup.settings)
+    }
+
     /**
      * Older app versions stored paid states under bare German month names ("oktober").
      * They are migrated to the year-aware "yyyy-MM" format so another year does not

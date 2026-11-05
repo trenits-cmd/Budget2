@@ -1,13 +1,14 @@
 # Budget2
 
-Budget2 ist eine native Android-App zur Verwaltung monatlicher Fixkosten, unregelmäßiger Zahlungen und des verfügbaren Monatsbudgets. Die Oberfläche ist mit Kotlin und Jetpack Compose umgesetzt; alle Daten bleiben lokal auf dem Gerät.
+Budget2 ist eine native Android-App zur Verwaltung monatlicher Fixkosten, unregelmäßiger Zahlungen und des verfügbaren Monatsbudgets. Die Oberfläche ist mit Kotlin und Jetpack Compose umgesetzt. Die Daten werden lokal auf dem Gerät gespeichert; CSV-Sicherungen können optional über die Android-Dateiauswahl in Google Drive abgelegt oder von dort geladen werden.
 
 ## Funktionen
 
 - **Dashboard:** Gesamtkosten, bezahlte und offene Beträge, Gehaltseingang, Tagesbudget für heute und morgen, Kontostand, Mindestpuffer, Soll-Kontostand-Prognosen sowie Anteile nach Zahlungsart und Status. Der Zahlungsstatus wird als gestapelter Bezahlt/Unbezahlt-Balken dargestellt.
 - **Fixkosten:** Wiederkehrende Zahlungen mit Zahlungsart, Zweck, Betrag, Fälligkeitstag (Tag im Monat oder Tag vor Monatsende) und Bezahlstatus. Zahlungen für den angezeigten Monat werden automatisch mit aufgeführt.
 - **Unregelmäßige Zahlungen:** Zahlungen mit festem Monat oder dem Status **"unbekannt"**. Sie erscheinen zusätzlich im Fixkosten-Tab und fließen in das Monatsbudget ein.
-- **Settings:** Kontostand, Mindestpuffer und Verwaltung aller Fixkosten-Zwecke.
+- **Settings:** Kontostand, Mindestpuffer, CSV-Export/Import und Verwaltung aller Fixkosten-Zwecke.
+- **CSV-Sicherung:** Alle Daten inklusive Einstellungen und Bezahlstatus werden als CSV exportiert bzw. wieder importiert. Der Speicherort wird über die Android-Dateiauswahl gewählt, sodass auch Google Drive möglich ist. Vor dem Import wird das Überschreiben bestätigt.
 - **Monatsansicht:** Umschalten zwischen aktuellem und nächstem Monat. Die App merkt sich die Tab-Historie und behält den ausgewählten Monat beim Zurücknavigieren im Blick.
 - **Zurück-Navigation:** Die System-Zurücktaste navigiert erst innerhalb der Tabs und setzt anschließend beim Verlassen des "Nächster Monat"-Zustands in den aktuellen Monat zurück, bevor sie die App minimiert.
 - **Status pro Monat und Jahr:** Bezahlte Fixkosten, unbekannte Zahlungen und Gehaltseingang werden getrennt für jeden Monat gespeichert (Schlüsselformat `yyyy-MM`).
@@ -16,17 +17,19 @@ Budget2 ist eine native Android-App zur Verwaltung monatlicher Fixkosten, unrege
 
 - `com.budget2.app` enthält nur das Paket der App.
 - `BudgetModels.kt`: Domänenmodelle, Berechnungen (`calculateDashboardSummary`, `paymentStatusPercentages`), Hilfsfunktionen und ID-Generierung.
-- `BudgetRepository.kt`: Alle `SharedPreferences`-Zugriffe, JSON-(De)Serialisierung, Legacy-Migration und Initial-Seeding der Standard-Fixkosten beim ersten Start.
+- `BudgetRepository.kt`: Alle `SharedPreferences`-Zugriffe, JSON-(De)Serialisierung, Legacy-Migration, Initial-Seeding der Standard-Fixkosten und das vollständige Backup (`exportBackup`/`importBackup`).
+- `BudgetCsv.kt`: CSV-Format des Komplett-Backups, Encoding/Decoding inklusive korrektem Quoting.
 - `BudgetFormatting.kt`: Währungsformatierung, Betragseingabe und Labels für den Fälligkeitstag.
 - `BudgetTheme.kt`: App-Farben und Theme.
-- `MainActivity.kt`: Jetpack-Compose-UI, Navigation, Dialoge und Interaktionen.
+- `MainActivity.kt`: Jetpack-Compose-UI, Navigation, Dialoge, CSV-Dateiauswahl und Interaktionen.
+- `docs/CODE_INDEX.md`: KI-lesbares Inhaltsverzeichnis mit Datenfluss, Persistenz-Keys, CSV-Format, Invarianten und Änderungs-Checkliste. Diese Datei wird bei Code-Änderungen mit aktualisiert.
 
 ## Entwicklung
 
 ### Voraussetzungen
-- Android Studio mit JBR 17
+- Android Studio mit JDK 17 oder neuer (getestet mit JBR 21)
 - Android SDK (z. B. `C:\Users\<User>\AppData\Local\Android\Sdk`)
-- Für lokale Builds: `JAVA_HOME=C:\Program Files\Android\Android Studio\jbr`, `ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk`
+- Für lokale Builds: `JAVA_HOME=C:\Users\<User>\.jdks\jbr-21.0.11`, `ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk`
 
 ### Build
 Debug-APK:
@@ -53,7 +56,8 @@ Auf dem Desktop liegt der Shortcut **Budget2 Handy-Test.lnk** (Icon `docs/logo.i
 ADB-Gerät muss verbunden und autorisiert sein. Der Shortcut funktioniert direkt ohne manuelle Befehle.
 
 ### Releases
-- Aktueller Test-Release: [Budget2 v1.3](https://github.com/trenits-cmd/Budget2/releases/tag/v1.3) (`Budget2-1.3-release.apk`). Release-Builds werden lokal mit dem Debug-Key signiert, bis ein stabiler Release-Keystore konfiguriert ist. Updates funktionieren nur, wenn derselbe Signaturschlüssel verwendet wird.
+- Aktueller Release: [Budget2 v1.05112026_0300](https://github.com/trenits-cmd/Budget2/releases/tag/v1.05112026_0300) (`Budget2-1.4-release.apk`), App-Version 1.4. Release-Tags folgen dem Schema `v1.DDMMYYYY_HHMM`.
+- Release-Builds werden lokal mit dem Debug-Key signiert, bis ein stabiler Release-Keystore konfiguriert ist. Updates funktionieren nur, wenn derselbe Signaturschlüssel verwendet wird.
 - Der GitHub-Workflow `.github/workflows/build-apk.yml` baut bei jedem Push auf `main` ein Release-APK und lädt es als Artifact hoch.
 
 ## Optimierungstipps
@@ -76,7 +80,7 @@ ADB-Gerät muss verbunden und autorisiert sein. Der Shortcut funktioniert direkt
 - **Robustere ID-Vergabe:** Durch Berücksichtigung reservierter IDs aus gelöschten Einträgen wird verhindert, dass neue Einträge alten Bezahlstatus erben.
 
 ### Zusätzliche Features
-- **Exporte/Backups:** JSON-Export/Import der Daten für Sicherung oder Gerätewechsel.
+- **Weitere Exportformate:** Neben dem vorhandenen CSV-Backup wäre ein JSON-Export für externe Tools denkbar.
 - **Wiederkehrende Budgets:** Erinnerungen für offene Zahlungen oder Widgets für Tagesbudget.
 - **Mehrjährige Ansicht:** Da Zahlungen pro `yyyy-MM` gespeichert werden, ließe sich eine Jahresübersicht leicht ergänzen.
 - **Kategorien/Tags:** Zusätzliche Filterung nach Kategorie oder Projekt.
